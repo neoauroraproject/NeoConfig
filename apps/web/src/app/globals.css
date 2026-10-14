@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand-primary: #3b82f6;
+  --brand-accent: #22d3ee;
+  --surface: rgba(255, 255, 255, 0.04);
+  --border: rgba(255, 255, 255, 0.08);
+  --bg0: #0f1115;
+  --bg1: #151922;
+  --text: #f4f5f7;
+  --muted: #9aa1ae;
+}
+
+html.light {
+  --surface: rgba(15, 17, 21, 0.03);
+  --border: rgba(15, 17, 21, 0.08);
+  --bg0: #f7f8fa;
+  --bg1: #ffffff;
+  --text: #151922;
+  --muted: #6b7280;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  color: var(--text);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, color-mix(in srgb, var(--brand-primary) 18%, transparent), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, color-mix(in srgb, var(--brand-accent) 12%, transparent), transparent 50%),
+    linear-gradient(180deg, var(--bg0), var(--bg1));
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.surface {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+}
+
+.muted {
+  color: var(--muted);
+}

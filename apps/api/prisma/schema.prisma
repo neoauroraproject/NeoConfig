@@ -1,0 +1,248 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ORG_ADMIN
+  USER
+}
+
+enum ServerStatus {
+  PENDING
+  ONLINE
+  OFFLINE
+  REVOKED
+}
+
+enum SyncState {
+  NEVER
+  OK
+  STALE
+  FAILED
+}
+
+enum QuotaKind {
+  KNOWN
+  UNLIMITED
+  UNKNOWN
+}
+
+enum ExpiryKind {
+  KNOWN
+  NONE
+  UNKNOWN
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRING_SOON
+  EXPIRED
+  DISABLED
+  UNKNOWN
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users            User[]
+  branding         Branding?
+  panels           PanelConnection[]
+  servers          Server[]
+  subscriptions    Subscription[]
+  hmpanel          HmPanelConnection?
+  auditLogs        AuditLog[]
+  enrollmentTokens EnrollmentToken[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  role         Role     @default(USER)
+  orgId        String?
+  locale       String   @default("en")
+  theme        String   @default("system")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  org           Organization?  @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  subscriptions Subscription[]
+  sessions      Session[]
+  auditLogs     AuditLog[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Branding {
+  id              String  @id @default(cuid())
+  orgId           String  @unique
+  appName         String  @default("NeoConfig")
+  shortName       String  @default("NeoConfig")
+  logoUrl         String?
+  logoDarkUrl     String?
+  iconUrl         String?
+  faviconUrl      String?
+  primaryColor    String  @default("#3B82F6")
+  accentColor     String  @default("#22D3EE")
+  themeDefault    String  @default("dark")
+  fontFamily      String  @default("Geist")
+  defaultLocale   String  @default("en")
+  enabledLocales  String  @default("en,fa,ar")
+  supportUrl      String?
+  termsUrl        String?
+  privacyUrl      String?
+  contactEmail    String?
+  customDomain    String? @unique
+  allowCopyLink   Boolean @default(true)
+  pwaThemeColor   String  @default("#0F1115")
+  pwaBgColor      String  @default("#0F1115")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+model PanelConnection {
+  id                 String   @id @default(cuid())
+  orgId              String
+  name               String
+  baseUrl            String
+  /// AES-GCM encrypted API token or password payload (JSON)
+  credentialsEnc     String
+  authMode           String   @default("bearer")
+  webBasePath        String   @default("")
+  subPathHint        String?
+  lastTestAt         DateTime?
+  lastTestOk         Boolean?
+  lastTestMessage    String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+model Server {
+  id              String       @id @default(cuid())
+  orgId           String
+  name            String
+  hostname        String?
+  agentVersion    String?
+  status          ServerStatus @default(PENDING)
+  credentialHash  String?
+  lastHeartbeatAt DateTime?
+  panelBaseUrl    String?
+  panelCredsEnc   String?
+  revokedAt       DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  org              Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  enrollmentTokens EnrollmentToken[]
+}
+
+model EnrollmentToken {
+  id        String    @id @default(cuid())
+  orgId     String
+  serverId  String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  server Server       @relation(fields: [serverId], references: [id], onDelete: Cascade)
+}
+
+model Subscription {
+  id               String   @id @default(cuid())
+  orgId            String?
+  userId           String
+  displayName      String
+  color            String?
+  /// AES-GCM encrypted subscription URL
+  urlEnc           String
+  urlFingerprint   String
+  subIdHint        String?
+  panelId          String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  org      Organization?         @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  user     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  snapshot SubscriptionSnapshot?
+}
+
+model SubscriptionSnapshot {
+  id              String             @id @default(cuid())
+  subscriptionId  String             @unique
+  status          SubscriptionStatus @default(UNKNOWN)
+  uploadBytes     BigInt?
+  downloadBytes   BigInt?
+  totalUsedBytes  BigInt?
+  quotaBytes      BigInt?
+  remainingBytes  BigInt?
+  quotaKind       QuotaKind          @default(UNKNOWN)
+  expiryAt        DateTime?
+  expiryKind      ExpiryKind         @default(UNKNOWN)
+  enabled         Boolean?
+  dataSource      String             @default("unknown")
+  syncState       SyncState          @default(NEVER)
+  lastSyncAt      DateTime?
+  lastSyncError   String?
+  rawMetaJson     String?
+  updatedAt       DateTime           @updatedAt
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+}
+
+model HmPanelConnection {
+  id             String    @id @default(cuid())
+  orgId          String    @unique
+  baseUrl        String?
+  credentialsEnc String?
+  configured     Boolean   @default(false)
+  lastTestAt     DateTime?
+  lastTestOk     Boolean?
+  lastTestMessage String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  orgId      String?
+  userId     String?
+  action     String
+  resource   String?
+  resourceId String?
+  ip         String?
+  metaJson   String?
+  createdAt  DateTime @default(now())
+
+  org  Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  user User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, createdAt])
+  @@index([action, createdAt])
+}

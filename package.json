@@ -1,0 +1,26 @@
+{
+  "name": "neoconfig",
+  "version": "1.0.0",
+  "private": true,
+  "description": "White-label VPN subscription viewer with secure 3x-ui integration",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@neoconfig/api & npm run dev --workspace=@neoconfig/web",
+    "dev:api": "npm run dev --workspace=@neoconfig/api",
+    "dev:web": "npm run dev --workspace=@neoconfig/web",
+    "build": "npm run build --workspace=@neoconfig/api && npm run build --workspace=@neoconfig/web",
+    "test": "npm run test --workspace=@neoconfig/api && npm run test --workspace=@neoconfig/web",
+    "test:api": "npm run test --workspace=@neoconfig/api",
+    "lint": "npm run lint --workspace=@neoconfig/api && npm run lint --workspace=@neoconfig/web",
+    "db:migrate": "npm run prisma:migrate --workspace=@neoconfig/api",
+    "db:generate": "npm run prisma:generate --workspace=@neoconfig/api",
+    "agent:build": "cd agent && go build -o ../dist/neoconfig-agent ./cmd/agent",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

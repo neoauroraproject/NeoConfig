@@ -3,7 +3,7 @@
 #  NeoConfig — server manager. Installed as /usr/local/bin/neoconfig
 #  neoconfig            interactive menu
 #  neoconfig <command>  status | logs | restart | update | password |
-#                       domain | backup | uninstall | version
+#                       domain | backup | doctor | uninstall | version
 # ═══════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -53,6 +53,7 @@ cmd_update() {
   if [[ "$(git rev-parse "origin/$branch")" == "$before" ]]; then ok "Already up to date ($(version))"; return; fi
   cmd_backup quiet
   git reset -q --hard "origin/$branch"
+  open_firewall
   info "Rebuilding (database migrations run on start)…"
   compose up -d --build
   install -m 0755 neoconfig.sh "$CLI_PATH"
@@ -92,6 +93,56 @@ cmd_domain() {
   compose up -d >/dev/null
   ok "Main domain is now $d (certificate is issued on the first visit)."
   echo -e "${DIM}Brand domains are managed in the admin panel → Brands → Domain.${NC}"
+}
+
+open_firewall() {
+  # Let's Encrypt and visitors need 80 and 443 reachable from the internet.
+  if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+    ufw allow 80/tcp >/dev/null; ufw allow 443/tcp >/dev/null; ufw allow 443/udp >/dev/null
+    echo "ufw: opened 80/tcp, 443/tcp, 443/udp"
+  fi
+  if command -v firewall-cmd >/dev/null && firewall-cmd --state >/dev/null 2>&1; then
+    firewall-cmd -q --permanent --add-service=http --add-service=https && firewall-cmd -q --reload
+    echo "firewalld: opened http/https"
+  fi
+}
+
+cmd_doctor() {
+  local domain ip resolved bad=0
+  domain=$(env_get PRIMARY_DOMAIN)
+  echo -e "${BOLD}Checking ${domain:-<no PRIMARY_DOMAIN>}${NC}"
+
+  ip=$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || env_get PUBLIC_IP)
+  resolved=$(getent ahostsv4 "$domain" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ')
+  if [[ -z "$domain" ]]; then warn "PRIMARY_DOMAIN is empty — run: neoconfig domain"; bad=1
+  elif [[ -z "$resolved" ]]; then warn "DNS: $domain has no A record. Point it to $ip."; bad=1
+  elif [[ " $resolved " == *" $ip "* ]]; then ok "DNS: $domain → $ip"
+  elif echo "$resolved" | grep -qE '^(104\.(1[6-9]|2[0-9]|3[01])|172\.6[4-9]|172\.7[01]|188\.114|190\.93|197\.234|198\.41)\.'; then
+    warn "DNS: $domain → $resolved (Cloudflare proxy). Turn the orange cloud OFF (DNS only) until the certificate is issued."; bad=1
+  else warn "DNS: $domain → $resolved, but this server is $ip."; bad=1
+  fi
+
+  for p in 80 443; do
+    if ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$p$"; then ok "Port $p is listening"; else warn "Nothing listens on port $p (is the proxy container up?)"; bad=1; fi
+  done
+  if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+    ufw status | grep -qE "^(80|443)(/tcp)?\s+ALLOW" && ok "ufw allows 80/443" || { warn "ufw is active and may block 80/443 → ufw allow 80,443/tcp"; bad=1; }
+  fi
+
+  if [[ -n "$domain" ]]; then
+    local code
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 -H "Host: $domain" http://127.0.0.1/ || true)
+    [[ "$code" == 30* ]] && ok "Proxy answers locally (HTTP $code → HTTPS)" || { warn "Proxy did not answer locally on port 80 (got ${code:-nothing})"; bad=1; }
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://$domain/api/v1/health" || true)
+    [[ "$code" == 200 ]] && ok "https://$domain works" || { warn "https://$domain not reachable yet (got ${code:-no answer})"; bad=1; }
+  fi
+
+  echo -e "\n${BOLD}Certificate log (last lines):${NC}"
+  compose logs --no-color proxy 2>/dev/null | grep -iE 'certificate obtained|obtain|acme|challenge|error|failed' | tail -n 12 || true
+  echo
+  if [[ $bad -eq 0 ]]; then ok "All checks passed."; else
+    echo -e "${DIM}If DNS and ports look right but HTTPS still fails, the provider's firewall (cloud panel / security group) is likely blocking 80/443 from outside.${NC}"
+  fi
 }
 
 cmd_backup() {
@@ -135,6 +186,7 @@ menu() {
     echo    "   5) Change admin password"
     echo    "   6) Change main domain"
     echo    "   7) Back up database"
+    echo    "   9) Diagnose domain & SSL"
     echo -e "   8) ${RED}Uninstall${NC}"
     echo    "   0) Exit"
     echo
@@ -148,6 +200,7 @@ menu() {
       5) cmd_password ;;
       6) cmd_domain ;;
       7) cmd_backup ;;
+      9) cmd_doctor ;;
       8) cmd_uninstall; exit 0 ;;
       0|q|"") exit 0 ;;
       *) warn "Unknown option" ;;
@@ -159,6 +212,7 @@ menu() {
 case "${1:-}" in
   "") menu ;;
   status) cmd_status ;;
+  doctor) cmd_doctor ;;
   logs) shift; cmd_logs "${1:-}" ;;
   restart) cmd_restart ;;
   update) cmd_update ;;
@@ -167,5 +221,5 @@ case "${1:-}" in
   backup) cmd_backup ;;
   uninstall) cmd_uninstall ;;
   version) version ;;
-  *) echo "Usage: neoconfig [status|logs|restart|update|password|domain|backup|uninstall|version]"; exit 1 ;;
+  *) echo "Usage: neoconfig [status|doctor|logs|restart|update|password|domain|backup|uninstall|version]"; exit 1 ;;
 esac

@@ -83,6 +83,18 @@ public_ip() {
   curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || curl -fsS --max-time 5 https://ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}'
 }
 
+open_firewall() {
+  # Let's Encrypt and visitors need 80 and 443 reachable from the internet.
+  if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+    ufw allow 80/tcp >/dev/null; ufw allow 443/tcp >/dev/null; ufw allow 443/udp >/dev/null
+    echo "ufw: opened 80/tcp, 443/tcp, 443/udp"
+  fi
+  if command -v firewall-cmd >/dev/null && firewall-cmd --state >/dev/null 2>&1; then
+    firewall-cmd -q --permanent --add-service=http --add-service=https && firewall-cmd -q --reload
+    echo "firewalld: opened http/https"
+  fi
+}
+
 main() {
   banner
   if [[ -d "$INSTALL_DIR/.git" ]]; then
@@ -93,6 +105,7 @@ main() {
 
   install_packages
   install_docker
+  open_firewall
 
   local ip; ip=$(public_ip)
   echo

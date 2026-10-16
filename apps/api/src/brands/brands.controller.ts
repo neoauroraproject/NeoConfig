@@ -49,6 +49,8 @@ class BrandDto {
   @IsOptional() @IsString() bankName?: string | null;
   @IsOptional() @IsString() renewalNote?: string | null;
   @IsOptional() @IsBoolean() expiryRemindersEnabled?: boolean;
+  @IsOptional() @IsString() @MaxLength(200) telegramBotToken?: string;
+  @IsOptional() @IsString() @MaxLength(64) telegramChatId?: string | null;
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => PlanDto) plans?: PlanDto[];
   @IsOptional() @IsArray() @IsString({ each: true }) panelIds?: string[];
 }
@@ -96,6 +98,11 @@ export class BrandsController {
   @Delete(':id/domains/:domainId')
   removeDomain(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('domainId') domainId: string) {
     return this.brands.removeDomain(user, id, domainId);
+  }
+
+  @Post(':id/telegram/test')
+  telegramTest(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.brands.telegramTest(user, id);
   }
 
   @Post(':id/domains/:domainId/check')

@@ -14,6 +14,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { HealthController } from './health.controller';
 import { PublicModule } from './public/public.module';
 import { PushModule } from './push/push.module';
+import { TelegramModule } from './telegram/telegram.module';
 import { RenewalsModule } from './renewals/renewals.module';
 
 @Module({
@@ -31,6 +32,7 @@ import { RenewalsModule } from './renewals/renewals.module';
     PublicModule,
     SubscriptionsModule,
     PanelsModule,
+    TelegramModule,
     BrandsModule,
     PushModule,
     RenewalsModule,

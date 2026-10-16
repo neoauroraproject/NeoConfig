@@ -10,7 +10,7 @@ import { AuthUser } from '../auth/auth.types';
 import { decryptSecret, encryptSecret } from '../common/crypto/secret.crypto';
 import { assertPublicHttpUrl, resolveAndAssertPublic } from '../common/ssrf/ssrf.guard';
 import { PrismaService } from '../prisma/prisma.service';
-import { PanelGatewayService } from './panel-gateway.service';
+import { PanelGatewayService, panelType } from './panel-gateway.service';
 
 type PanelInput = {
   name: string;
@@ -44,6 +44,9 @@ export class PanelsService {
     this.requireOrgAdmin(user);
     await this.assertReachableUrl(input.baseUrl);
 
+    if (panelType(input.type) === 'hmpanel' && !input.apiToken?.startsWith('hmp_')) {
+      throw new ForbiddenException('HMPanel needs an API key (hmp_…) from HMPanel → API access');
+    }
     if (!input.apiToken && !(input.username && input.password)) {
       throw new ForbiddenException('Provide apiToken or username/password');
     }
@@ -62,7 +65,7 @@ export class PanelsService {
       data: {
         orgId: user.orgId!,
         name: input.name,
-        type: input.type === 'pasarguard' ? 'pasarguard' : 'xui',
+        type: panelType(input.type),
         baseUrl: input.baseUrl.replace(/\/+$/, ''),
         credentialsEnc,
         authMode: input.apiToken ? 'bearer' : 'cookie',
@@ -136,7 +139,7 @@ export class PanelsService {
       where: { id },
       data: {
         name: input.name ?? undefined,
-        type: input.type ? (input.type === 'pasarguard' ? 'pasarguard' : 'xui') : undefined,
+        type: input.type ? panelType(input.type) : undefined,
         baseUrl: input.baseUrl ? input.baseUrl.replace(/\/+$/, '') : undefined,
         subPathHint: input.subPathHint ?? undefined,
         credentialsEnc,

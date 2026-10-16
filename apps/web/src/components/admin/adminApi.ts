@@ -22,6 +22,8 @@ export type AdminBrand = {
   isDefault: boolean;
   renewalEnabled: boolean;
   expiryRemindersEnabled: boolean;
+  telegramChatId: string | null;
+  telegramConfigured: boolean;
   cardNumber: string | null;
   cardHolder: string | null;
   bankName: string | null;
@@ -45,7 +47,7 @@ export type AdminBrand = {
 export type Panel = {
   id: string;
   name: string;
-  type: 'xui' | 'pasarguard';
+  type: 'xui' | 'pasarguard' | 'hmpanel';
   baseUrl: string;
   authMode: string;
   lastTestAt: string | null;
@@ -150,6 +152,8 @@ export const adminApi = {
     request<AdminBrand>(`/api/v1/admin/brands/${id}/domains/${domainId}`, { method: 'DELETE', token: tk() }),
   checkDomain: (id: string, domainId: string) =>
     request<AdminBrand>(`/api/v1/admin/brands/${id}/domains/${domainId}/check`, { method: 'POST', token: tk() }),
+  telegramTest: (id: string) =>
+    request<{ ok: boolean }>(`/api/v1/admin/brands/${id}/telegram/test`, { method: 'POST', token: tk() }),
   broadcast: (id: string, title: string, body: string) =>
     request<{ sent: number; total: number }>(`/api/v1/admin/brands/${id}/push`, {
       method: 'POST',

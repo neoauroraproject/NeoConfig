@@ -10,6 +10,7 @@ import { PanelGatewayService } from '../panels/panel-gateway.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PublicService } from '../public/public.service';
 import { PushService } from '../push/push.service';
+import { TelegramService } from '../telegram/telegram.service';
 
 const MAX_RECEIPT_BYTES = 3 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -24,6 +25,7 @@ export class RenewalsService {
     private readonly gateway: PanelGatewayService,
     private readonly push: PushService,
     private readonly audit: AuditService,
+    private readonly telegram: TelegramService,
   ) {}
 
   // ---------- public ----------
@@ -76,6 +78,7 @@ export class RenewalsService {
         deviceEndpoint: input.deviceEndpoint?.slice(0, 1024) || null,
       },
     });
+    void this.telegram.renewalReceived(brand, row, { mime, data }).catch(() => undefined);
     return this.toPublic(row);
   }
 
@@ -167,6 +170,7 @@ export class RenewalsService {
         decidedById: user.id,
       },
     });
+    void this.notifyTeam(row, { approved: true, by: user.email, appliedOnPanel, note: opts.note });
     const push = await this.push.notifySubscription(
       row.brandId,
       row.subId,
@@ -201,6 +205,7 @@ export class RenewalsService {
         decidedById: user.id,
       },
     });
+    void this.notifyTeam(row, { approved: false, by: user.email, appliedOnPanel: null, note });
     const push = await this.push.notifySubscription(
       row.brandId,
       row.subId,
@@ -214,6 +219,16 @@ export class RenewalsService {
     );
     await this.audit.log({ orgId: row.orgId, userId: user.id, action: 'renewal.reject', resource: 'renewal', resourceId: id });
     return { ok: true, notified: push.sent };
+  }
+
+  private async notifyTeam(
+    row: { brandId: string; displayName: string | null; subId: string; planTitle: string },
+    decision: { approved: boolean; by: string; appliedOnPanel: boolean | null; note?: string | null },
+  ) {
+    const brand = await this.prisma.brand.findUnique({ where: { id: row.brandId } }).catch(() => null);
+    if (brand && this.telegram.isConfigured(brand)) {
+      await this.telegram.renewalDecided(brand, row, decision).catch(() => undefined);
+    }
   }
 
   private async mustFind(user: AuthUser, id: string) {

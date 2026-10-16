@@ -2,11 +2,18 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PanelConnection } from '@prisma/client';
 import { decryptSecret } from '../common/crypto/secret.crypto';
+import { HmPanelClientService, normalizeHmPanelClient } from '../integrations/hmpanel/hmpanel.client';
 import { PasarGuardClientService } from '../integrations/pasarguard/pasarguard.client';
 import { NormalizedSubscription } from '../integrations/xui/types';
 import { XuiClientService } from '../integrations/xui/xui.client';
 
-export type PanelType = 'xui' | 'pasarguard';
+export type PanelType = 'xui' | 'pasarguard' | 'hmpanel';
+
+export const PANEL_TYPES: PanelType[] = ['xui', 'pasarguard', 'hmpanel'];
+
+export function panelType(raw?: string): PanelType {
+  return PANEL_TYPES.includes(raw as PanelType) ? (raw as PanelType) : 'xui';
+}
 
 export interface FoundAccount {
   panelId: string;
@@ -29,6 +36,7 @@ export class PanelGatewayService {
     private readonly config: ConfigService,
     private readonly xui: XuiClientService,
     private readonly pasarguard: PasarGuardClientService,
+    private readonly hmpanel: HmPanelClientService,
   ) {}
 
   private creds(row: PanelConnection) {
@@ -48,6 +56,7 @@ export class PanelGatewayService {
   }> {
     const cfg = this.creds(row);
     if (row.type === 'pasarguard') return this.pasarguard.testConnection(cfg);
+    if (row.type === 'hmpanel') return this.hmpanel.testConnection(cfg);
     const result = await this.xui.testConnection(cfg);
     if (!result.ok) return result;
     const stats = await this.xui.stats(cfg).catch(() => undefined);
@@ -57,6 +66,21 @@ export class PanelGatewayService {
   async find(row: PanelConnection, subUrl: string, subId: string | null): Promise<FoundAccount | null> {
     const cfg = this.creds(row);
     try {
+      if (row.type === 'hmpanel') {
+        if (!subId) return null;
+        const c = await this.hmpanel.lookup(cfg, subId);
+        if (!c) return null;
+        return {
+          panelId: row.id,
+          panelType: 'hmpanel',
+          clientRef: c.id,
+          displayName: c.remark || c.email,
+          snapshot: normalizeHmPanelClient(c),
+          online: null,
+          lastOnlineAt: null,
+          renewable: true,
+        };
+      }
       if (row.type === 'pasarguard') {
         const m = await this.pasarguard.findBySubscriptionUrl(cfg, subUrl);
         if (!m) return null;
@@ -97,6 +121,7 @@ export class PanelGatewayService {
   ): Promise<{ ok: boolean; message: string }> {
     const cfg = this.creds(row);
     try {
+      if (row.type === 'hmpanel') return await this.hmpanel.renew(cfg, clientRef, plan);
       return row.type === 'pasarguard'
         ? await this.pasarguard.renew(cfg, clientRef, plan)
         : await this.xui.renewBySubId(cfg, clientRef, plan);

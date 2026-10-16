@@ -136,6 +136,11 @@ model Brand {
   /// Push a reminder to followers when an account nears expiry or runs low on data.
   expiryRemindersEnabled Boolean @default(true)
 
+  /// Telegram notices for the sales team: new receipts and decisions.
+  /// Bot token is AES-GCM encrypted at rest.
+  telegramBotTokenEnc String?
+  telegramChatId      String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

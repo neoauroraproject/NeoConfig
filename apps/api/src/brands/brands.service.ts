@@ -11,7 +11,9 @@ import { lookup } from 'dns/promises';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../auth/auth.types';
 import { brandScope, isOrgAdmin, requireOrgAdmin } from '../common/access/scope';
+import { encryptSecret } from '../common/crypto/secret.crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelegramService } from '../telegram/telegram.service';
 
 export interface RenewalPlan {
   id: string;
@@ -27,6 +29,7 @@ const EDITABLE = [
   'appName', 'shortName', 'tagline', 'logoUrl', 'iconUrl', 'primaryColor', 'accentColor',
   'theme', 'defaultLocale', 'supportUrl', 'supportTelegram', 'contactEmail', 'allowCopyLink',
   'renewalEnabled', 'cardNumber', 'cardHolder', 'bankName', 'renewalNote', 'expiryRemindersEnabled',
+  'telegramChatId',
 ] as const;
 
 export type BrandInput = Partial<Record<(typeof EDITABLE)[number], string | boolean | null>> & {
@@ -36,6 +39,8 @@ export type BrandInput = Partial<Record<(typeof EDITABLE)[number], string | bool
   ownerId?: string | null;
   plans?: RenewalPlan[];
   panelIds?: string[];
+  /** Write-only. Empty string clears it. */
+  telegramBotToken?: string;
 };
 
 type BrandFull = Brand & { domains: BrandDomain[]; panels: Pick<PanelConnection, 'id'>[] };
@@ -46,6 +51,7 @@ export class BrandsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly config: ConfigService,
+    private readonly telegram: TelegramService,
   ) {}
 
   // ---------- public ----------
@@ -285,13 +291,34 @@ export class BrandsService {
         if (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) out[k] = v;
       } else if (k === 'appName' || k === 'shortName') {
         if (typeof v === 'string' && v.trim()) out[k] = v.trim().slice(0, 60);
+      } else if (k === 'telegramChatId') {
+        out[k] = typeof v === 'string' ? v.trim().replace(/[^\-\d@A-Za-z_]/g, '').slice(0, 64) || null : null;
       } else if (k === 'cardNumber') {
         out[k] = typeof v === 'string' ? v.replace(/[^\d]/g, '').slice(0, 26) || null : null;
       } else {
         out[k] = typeof v === 'string' ? v.trim().slice(0, 500) || null : null;
       }
     }
+    if (input.telegramBotToken !== undefined) {
+      const token = input.telegramBotToken.trim();
+      if (token && !/^\d+:[\w-]{30,}$/.test(token)) {
+        throw new BadRequestException('Telegram bot token looks wrong — copy it from @BotFather');
+      }
+      out.telegramBotTokenEnc = token
+        ? encryptSecret(token, this.config.getOrThrow<string>('ENCRYPTION_KEY'))
+        : null;
+    }
     return out;
+  }
+
+  async telegramTest(user: AuthUser, id: string) {
+    const brand = await this.mustOwn(user, id);
+    try {
+      await this.telegram.test(brand);
+    } catch (err) {
+      throw new BadRequestException(`Telegram: ${err instanceof Error ? err.message : 'failed'}`);
+    }
+    return { ok: true };
   }
 
   private async assertSlugFree(slug: string) {
@@ -346,6 +373,8 @@ export class BrandsService {
       renewalNote: r.renewalNote,
       plans: parsePlans(r.plansJson),
       expiryRemindersEnabled: r.expiryRemindersEnabled,
+      telegramChatId: r.telegramChatId,
+      telegramConfigured: Boolean(r.telegramBotTokenEnc && r.telegramChatId),
       panelIds: r.panels.map((p) => p.id),
       owner: r.owner ?? null,
       domains: r.domains.map((d) => ({

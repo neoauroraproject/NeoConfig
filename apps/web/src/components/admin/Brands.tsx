@@ -302,7 +302,18 @@ function BrandEditor({
           {tab === 'domains' && <DomainsTab brand={brand} draft={draft} set={set} isAdmin={isAdmin} onChange={(b) => { onChange(b); setDraft((d) => ({ ...d, domains: b.domains })); }} />}
           {tab === 'renewal' && <RenewalTab draft={draft} set={set} />}
           {tab === 'access' && isAdmin && <AccessTab draft={draft} set={set} onDeleted={onDeleted} />}
-          {tab === 'notify' && <NotifyTab brand={brand} draft={draft} set={set} />}
+          {tab === 'notify' && (
+            <>
+              <TelegramCard
+                brand={brand}
+                onSaved={(b) => {
+                  onChange(b);
+                  setDraft((d) => ({ ...d, telegramChatId: b.telegramChatId, telegramConfigured: b.telegramConfigured }));
+                }}
+              />
+              <NotifyTab brand={brand} draft={draft} set={set} />
+            </>
+          )}
         </div>
 
         <div className="xl:sticky xl:top-8 xl:self-start">
@@ -578,7 +589,7 @@ function AccessTab({ draft, set, onDeleted }: { draft: AdminBrand; set: SetFn; o
               />
               <StatusDot ok={p.lastTestOk} />
               <span className="text-sm">{p.name}</span>
-              <span className="text-xs text-[var(--ink-3)]">{p.type === 'pasarguard' ? 'PasarGuard' : '3x-ui'}</span>
+              <span className="text-xs text-[var(--ink-3)]">{p.type === 'pasarguard' ? 'PasarGuard' : p.type === 'hmpanel' ? 'HMPanel' : '3x-ui'}</span>
             </label>
           ))}
           {panels.length === 0 && <p className="text-sm text-[var(--ink-3)]">پنلی وصل نیست.</p>}
@@ -638,6 +649,83 @@ function AccessTab({ draft, set, onDeleted }: { draft: AdminBrand; set: SetFn; o
         </div>
       </Card>
     </div>
+  );
+}
+
+/** Bot token is write-only, so this card saves on its own instead of with the main form. */
+function TelegramCard({ brand, onSaved }: { brand: AdminBrand; onSaved: (b: AdminBrand) => void }) {
+  const [token, setToken] = useState('');
+  const [chatId, setChatId] = useState(brand.telegramChatId ?? '');
+  const [busy, setBusy] = useState<'save' | 'test' | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function save() {
+    setBusy('save');
+    setMsg(null);
+    try {
+      const b = await adminApi.updateBrand(brand.id, {
+        telegramChatId: chatId.trim(),
+        ...(token.trim() ? { telegramBotToken: token.trim() } : {}),
+      } as Partial<AdminBrand>);
+      setToken('');
+      onSaved(b);
+      setMsg({ ok: true, text: 'ذخیره شد.' });
+    } catch (e) {
+      setMsg({ ok: false, text: errMsg(e) });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function test() {
+    setBusy('test');
+    setMsg(null);
+    try {
+      await adminApi.telegramTest(brand.id);
+      setMsg({ ok: true, text: 'پیام آزمایشی ارسال شد؛ تلگرام را چک کن.' });
+    } catch (e) {
+      setMsg({ ok: false, text: errMsg(e) });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Card className="mb-3">
+      <div className="flex items-center gap-2">
+        <h2 className="font-medium">اعلان تمدید در تلگرام</h2>
+        <StatusDot ok={brand.telegramConfigured ? true : null} />
+      </div>
+      <p className="mt-1 text-sm leading-7 text-[var(--ink-2)]">
+        هر رسید تازه همراه تصویرش، و هر تأیید یا رد، به این گروه یا کانال فرستاده می‌شود. با @BotFather ربات بساز، به گروه اضافه‌اش کن و آیدی گروه را بنویس.
+      </p>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <Field label="توکن ربات" htmlFor="tg-token" hint={brand.telegramConfigured ? 'ذخیره شده؛ برای تغییر، توکن جدید بنویس' : 'از @BotFather'}>
+          <input
+            id="tg-token"
+            dir="ltr"
+            type="password"
+            autoComplete="off"
+            className="field"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder={brand.telegramConfigured ? '••••••••' : '123456:ABC…'}
+          />
+        </Field>
+        <Field label="آیدی گروه یا کانال" htmlFor="tg-chat" hint="مثل ‎-1001234567890 یا ‎@my_channel">
+          <input id="tg-chat" dir="ltr" className="field" value={chatId} onChange={(e) => setChatId(e.target.value)} />
+        </Field>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Button onClick={save} busy={busy === 'save'} disabled={busy !== null}>
+          ذخیرهٔ تلگرام
+        </Button>
+        <Button variant="secondary" onClick={test} busy={busy === 'test'} disabled={busy !== null || !brand.telegramConfigured}>
+          <Send className="h-4 w-4" /> ارسال پیام آزمایشی
+        </Button>
+        {msg && <p className={`text-sm ${msg.ok ? 'text-[#1fa66a]' : 'text-[#d4373f]'}`}>{msg.text}</p>}
+      </div>
+    </Card>
   );
 }
 

@@ -112,7 +112,7 @@ export function OverviewPage({ go, isAdmin }: { go: (s: Section) => void; isAdmi
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">{p.name}</span>
                       <span className="block truncate text-xs text-[var(--ink-3)]">
-                        {p.type === 'pasarguard' ? 'PasarGuard' : '3x-ui ثنایی'}
+                        {p.type === 'pasarguard' ? 'PasarGuard' : p.type === 'hmpanel' ? 'HMPanel' : '3x-ui ثنایی'}
                         {p.lastTestAt ? ` · ${relativeTime(p.lastTestAt, 'fa')}` : ' · تست نشده'}
                       </span>
                     </span>

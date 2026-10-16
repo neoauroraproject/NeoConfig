@@ -23,7 +23,7 @@ class CreatePanelDto {
   name!: string;
 
   @IsOptional()
-  @IsIn(['xui', 'pasarguard'])
+  @IsIn(['xui', 'pasarguard', 'hmpanel'])
   type?: string;
 
   @IsUrl({ require_tld: false })
@@ -48,7 +48,7 @@ class CreatePanelDto {
 
 class UpdatePanelDto {
   @IsOptional() @IsString() @MinLength(1) name?: string;
-  @IsOptional() @IsIn(['xui', 'pasarguard']) type?: string;
+  @IsOptional() @IsIn(['xui', 'pasarguard', 'hmpanel']) type?: string;
   @IsOptional() @IsUrl({ require_tld: false }) baseUrl?: string;
   @IsOptional() @IsString() apiToken?: string;
   @IsOptional() @IsString() username?: string;

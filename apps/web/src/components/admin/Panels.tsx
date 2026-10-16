@@ -8,7 +8,7 @@ import { Button, Card, Empty, Field, PageHeader, StatusDot, errMsg } from './ui'
 
 type Form = {
   name: string;
-  type: 'xui' | 'pasarguard';
+  type: 'xui' | 'pasarguard' | 'hmpanel';
   baseUrl: string;
   auth: 'password' | 'token';
   username: string;
@@ -23,6 +23,11 @@ const TYPE_INFO = {
     label: '3x-ui (ثنایی)',
     urlHint: 'آدرس کامل پنل همراه با مسیر مخفی، مثل https://panel.example.com:2053/abc123',
     tokenHint: 'از Settings → Security → API Token در پنل ثنایی',
+  },
+  hmpanel: {
+    label: 'HMPanel',
+    urlHint: 'آدرس HMPanel، مثل https://panel.example.com',
+    tokenHint: 'از HMPanel ← دسترسی API یک کلید hmp_ بساز. کلید نماینده فقط مشتری‌های همان نماینده را نشان می‌دهد.',
   },
   pasarguard: {
     label: 'PasarGuard',
@@ -100,7 +105,7 @@ export function Panels() {
             <Card key={p.id} className="!p-4">
               <div className="flex flex-wrap items-center gap-4">
                 <div className="grid h-11 w-11 place-items-center rounded-xl bg-[var(--surface-2)] text-xs font-semibold text-[var(--ink-2)]">
-                  {p.type === 'pasarguard' ? 'PG' : 'X'}
+                  {p.type === 'pasarguard' ? 'PG' : p.type === 'hmpanel' ? 'HM' : 'X'}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -197,13 +202,13 @@ function PanelForm({
       <form onSubmit={submit}>
         <h2 className="font-medium">{panel ? `ویرایش ${panel.name}` : 'پنل جدید'}</h2>
         <div className="mt-4 flex gap-2" role="radiogroup" aria-label="نوع پنل">
-          {(['xui', 'pasarguard'] as const).map((t) => (
+          {(['xui', 'pasarguard', 'hmpanel'] as const).map((t) => (
             <button
               key={t}
               type="button"
               role="radio"
               aria-checked={f.type === t}
-              onClick={() => set('type', t)}
+              onClick={() => setF((x) => ({ ...x, type: t, auth: t === 'hmpanel' ? 'token' : x.auth }))}
               className={`h-10 rounded-xl px-4 text-sm ${f.type === t ? 'bg-[var(--ink)] text-white' : 'border border-[var(--line)] text-[var(--ink-2)]'}`}
             >
               {TYPE_INFO[t].label}
@@ -218,7 +223,7 @@ function PanelForm({
             <input id="p-url" dir="ltr" required className="field" value={f.baseUrl} onChange={(e) => set('baseUrl', e.target.value)} placeholder="https://" />
           </Field>
         </div>
-        <div className="mt-4 flex gap-4 text-sm">
+        <div className={`mt-4 flex gap-4 text-sm ${f.type === 'hmpanel' ? 'hidden' : ''}`}>
           <label className="inline-flex items-center gap-2">
             <input type="radio" name="auth" checked={f.auth === 'password'} onChange={() => set('auth', 'password')} /> نام کاربری و رمز
           </label>
@@ -237,7 +242,7 @@ function PanelForm({
               </Field>
             </>
           ) : (
-            <Field label="توکن API" htmlFor="p-token" hint={panel ? 'خالی بگذار تا توکن قبلی بماند' : info.tokenHint}>
+            <Field label={f.type === 'hmpanel' ? 'کلید API (hmp_…)' : 'توکن API'} htmlFor="p-token" hint={panel ? 'خالی بگذار تا توکن قبلی بماند' : info.tokenHint}>
               <input id="p-token" dir="ltr" autoComplete="off" className="field" value={f.apiToken} onChange={(e) => set('apiToken', e.target.value)} required={!panel} />
             </Field>
           )}

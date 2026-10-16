@@ -1,6 +1,10 @@
 # Fixed project name: containers are neoconfig-*, whatever the folder is called.
 name: neoconfig
 
+# api/web come prebuilt from GHCR (built by .github/workflows/images.yml).
+# Build locally instead with:
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+
 services:
   db:
     image: postgres:16-alpine
@@ -19,9 +23,7 @@ services:
       retries: 10
 
   api:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.api
+    image: ${NEOCONFIG_REGISTRY:-ghcr.io/neoauroraproject}/neoconfig-api:${NEOCONFIG_TAG:-latest}
     env_file:
       - .env
     environment:
@@ -35,11 +37,7 @@ services:
     restart: unless-stopped
 
   web:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.web
-      args:
-        API_INTERNAL_URL: http://api:4000
+    image: ${NEOCONFIG_REGISTRY:-ghcr.io/neoauroraproject}/neoconfig-web:${NEOCONFIG_TAG:-latest}
     environment:
       API_INTERNAL_URL: http://api:4000
     ports:

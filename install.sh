@@ -122,7 +122,13 @@ main() {
   ask_password
 
   info "Downloading NeoConfig ($BRANCH)…"
-  git clone -q --depth 1 --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+  # Only compose files, Caddyfile and the CLI are needed on the server; the app
+  # itself arrives as prebuilt images from ghcr.io.
+  if git clone -q --depth 1 --filter=blob:none --sparse --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR" 2>/dev/null; then
+    git -C "$INSTALL_DIR" sparse-checkout set docker
+  else
+    git clone -q --depth 1 --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+  fi
   cd "$INSTALL_DIR"
 
   cp .env.example .env
@@ -140,8 +146,15 @@ main() {
   set_env API_INTERNAL_URL "http://api:4000"
   set_env VAPID_SUBJECT "mailto:${ACME_EMAIL}"
 
-  info "Building and starting (first run takes a few minutes)…"
-  docker compose up -d --build
+  info "Downloading images…"
+  if docker compose pull -q; then
+    docker compose up -d
+  else
+    warn "Could not download prebuilt images from ghcr.io — building on this server instead (slower)."
+    git sparse-checkout disable 2>/dev/null || true
+    set_env NEOCONFIG_BUILD_LOCAL 1
+    docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+  fi
 
   install -m 0755 neoconfig.sh "$CLI_PATH"
   ok "Command installed: neoconfig"

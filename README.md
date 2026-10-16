@@ -68,6 +68,11 @@ bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/NeoConfig/m
 
 نصب‌کننده Docker را (اگر نباشد) نصب می‌کند، دامنهٔ اصلی، ایمیل SSL و ایمیل/رمز مدیر را می‌پرسد، کلیدهای امنیتی تصادفی می‌سازد، برنامه را در `/opt/neoconfig` بالا می‌آورد و فرمان `neoconfig` را نصب می‌کند. قبل از اجرا، رکورد A دامنه را به IP سرور بزنید.
 
+**سریع:** ایمیج‌های `api` و `web` در GitHub Actions ساخته و روی GHCR منتشر می‌شوند (`ghcr.io/neoauroraproject/neoconfig-api` و `neoconfig-web`، برای amd64 و arm64). سرور فقط آن‌ها را دانلود می‌کند؛ نصب و `neoconfig update` حدود یک دقیقه طول می‌کشد. اگر سرور به ghcr.io دسترسی نداشته باشد، نصب‌کننده خودکار روی خود سرور build می‌کند.
+
+- نسخهٔ مشخص: در `.env` بنویسید `NEOCONFIG_TAG=1.2.0` (یا `sha-abc1234`)؛ پیش‌فرض `latest`.
+- build محلی: `docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`
+
 ### منوی مدیریت `neoconfig`
 
 ```bash
@@ -79,10 +84,11 @@ neoconfig
 | Status | وضعیت سرویس‌ها و سلامت API |
 | Logs | لاگ زنده (api / web / proxy / db) |
 | Restart | راه‌اندازی دوباره |
-| Update | دریافت آخرین نسخه، پشتیبان‌گیری خودکار، بیلد و اجرای مایگریشن‌ها |
+| Update | پشتیبان‌گیری خودکار، دانلود ایمیج‌های جدید و اجرای مایگریشن‌ها |
 | Change admin password | تغییر رمز (و در صورت نیاز ایمیل) مدیر؛ همهٔ نشست‌ها خارج می‌شوند |
 | Change main domain | تغییر دامنهٔ اصلی؛ گواهی در اولین بازدید صادر می‌شود |
 | Back up database | پشتیبان فشرده در `/opt/neoconfig/backups` (۱۰ نسخهٔ آخر) |
+| Diagnose domain & SSL | `neoconfig doctor`: بررسی DNS، پورت‌ها، فایروال و گواهی |
 | Uninstall | حذف کامل، با امکان نگه داشتن پشتیبان دیتابیس |
 
 همه به‌صورت فرمان مستقیم هم کار می‌کنند: `neoconfig update`، `neoconfig password`، `neoconfig uninstall` و…

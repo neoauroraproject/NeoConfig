@@ -21,14 +21,25 @@ die()  { echo -e "${RED}✘ $*${NC}" >&2; exit 1; }
 [[ -d "$INSTALL_DIR" ]] || die "NeoConfig is not installed in $INSTALL_DIR."
 cd "$INSTALL_DIR"
 
-compose() { docker compose "$@"; }
+compose() {
+  # Servers that cannot reach ghcr.io build locally (set by the installer).
+  if [[ "$(env_get NEOCONFIG_BUILD_LOCAL)" == "1" ]]; then
+    docker compose -f docker-compose.yml -f docker-compose.build.yml "$@"
+  else
+    docker compose "$@"
+  fi
+}
 env_get() { grep -E "^$1=" .env 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '\r'; }
 set_env() {
   local key=$1 val=$2
   val=${val//\\/\\\\}; val=${val//&/\\&}; val=${val//|/\\|}
   if grep -qE "^${key}=" .env; then sed -i "s|^${key}=.*|${key}=${val}|" .env; else echo "${key}=${2}" >> .env; fi
 }
-version() { git describe --tags --always 2>/dev/null || git rev-parse --short HEAD; }
+version() {
+  local rev
+  rev=$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' neoconfig-api-1 2>/dev/null | cut -c1-7)
+  echo "${rev:-$(git rev-parse --short HEAD 2>/dev/null)}"
+}
 
 cmd_status() {
   echo -e "${BOLD}NeoConfig${NC} $(version) · ${DIM}$INSTALL_DIR${NC}"
@@ -46,19 +57,25 @@ cmd_logs() {
 cmd_restart() { info "Restarting…"; compose restart; ok "Restarted"; }
 
 cmd_update() {
-  info "Checking for updates…"
-  local before; before=$(git rev-parse HEAD)
-  git fetch -q origin
-  local branch; branch=$(git rev-parse --abbrev-ref HEAD)
-  if [[ "$(git rev-parse "origin/$branch")" == "$before" ]]; then ok "Already up to date ($(version))"; return; fi
-  cmd_backup quiet
-  git reset -q --hard "origin/$branch"
-  open_firewall
-  info "Rebuilding (database migrations run on start)…"
-  compose up -d --build
+  local before branch
+  before=$(version)
+  branch=$(git rev-parse --abbrev-ref HEAD)
+  info "Fetching scripts and settings…"
+  git fetch -q --depth 1 origin "$branch" && git reset -q --hard FETCH_HEAD
   install -m 0755 neoconfig.sh "$CLI_PATH"
+  open_firewall
+  cmd_backup quiet
+  if [[ "$(env_get NEOCONFIG_BUILD_LOCAL)" == "1" ]]; then
+    info "Building on this server (database migrations run on start)…"
+    compose up -d --build
+  else
+    info "Downloading new images…"
+    compose pull -q
+    compose up -d
+  fi
   docker image prune -f >/dev/null 2>&1 || true
-  ok "Updated $(git rev-parse --short "$before") → $(version)"
+  local after; after=$(version)
+  if [[ "$before" == "$after" ]]; then ok "Already up to date ($after)"; else ok "Updated $before → $after"; fi
 }
 
 cmd_password() {

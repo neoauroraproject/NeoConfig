@@ -10,7 +10,14 @@ datasource db {
 enum Role {
   SUPER_ADMIN
   ORG_ADMIN
+  RESELLER
   USER
+}
+
+enum RenewalStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum ServerStatus {
@@ -55,13 +62,14 @@ model Organization {
   updatedAt DateTime @updatedAt
 
   users            User[]
-  branding         Branding?
+  brands           Brand[]
   panels           PanelConnection[]
   servers          Server[]
   subscriptions    Subscription[]
   hmpanel          HmPanelConnection?
   auditLogs        AuditLog[]
   enrollmentTokens EnrollmentToken[]
+  renewals         RenewalRequest[]
 }
 
 model User {
@@ -80,63 +88,102 @@ model User {
   subscriptions Subscription[]
   sessions      Session[]
   auditLogs     AuditLog[]
+  ownedBrands   Brand[]        @relation("BrandOwner")
 }
 
 model Session {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  tokenHash String   @unique
+  tokenHash String    @unique
   expiresAt DateTime
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   revokedAt DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-model Branding {
+/// A white-label storefront: its own name, colors, domains, panels and renewal desk.
+model Brand {
   id              String  @id @default(cuid())
-  orgId           String  @unique
+  orgId           String
+  slug            String  @unique
   appName         String  @default("NeoConfig")
   shortName       String  @default("NeoConfig")
+  tagline         String?
   logoUrl         String?
-  logoDarkUrl     String?
   iconUrl         String?
-  faviconUrl      String?
-  primaryColor    String  @default("#3B82F6")
-  accentColor     String  @default("#22D3EE")
-  themeDefault    String  @default("dark")
-  fontFamily      String  @default("Geist")
-  defaultLocale   String  @default("en")
-  enabledLocales  String  @default("en,fa,ar")
+  primaryColor    String  @default("#4F5BD5")
+  accentColor     String  @default("#FF6A1A")
+  /// mist | graphite | sage
+  theme           String  @default("mist")
+  defaultLocale   String  @default("fa")
   supportUrl      String?
-  termsUrl        String?
-  privacyUrl      String?
+  supportTelegram String?
   contactEmail    String?
-  customDomain    String? @unique
   allowCopyLink   Boolean @default(true)
-  pwaThemeColor   String  @default("#0F1115")
-  pwaBgColor      String  @default("#0F1115")
+  active          Boolean @default(true)
+  isDefault       Boolean @default(false)
+  ownerId         String?
 
-  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  renewalEnabled Boolean @default(false)
+  cardNumber     String?
+  cardHolder     String?
+  bankName       String?
+  renewalNote    String?
+  /// JSON array of { id, title, days, gb, price }
+  plansJson      String  @default("[]")
+
+  /// Push a reminder to followers when an account nears expiry or runs low on data.
+  expiryRemindersEnabled Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  org       Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  owner     User?             @relation("BrandOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  domains   BrandDomain[]
+  panels    PanelConnection[]
+  renewals  RenewalRequest[]
+  devices   PushDevice[]
+  lookups   LookupEvent[]
+  reminders ExpiryReminder[]
+
+  @@index([orgId])
+}
+
+model BrandDomain {
+  id           String    @id @default(cuid())
+  brandId      String
+  domain       String    @unique
+  lastCheckAt  DateTime?
+  dnsOk        Boolean?
+  sslOk        Boolean?
+  checkMessage String?
+  createdAt    DateTime  @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
 }
 
 model PanelConnection {
-  id                 String   @id @default(cuid())
-  orgId              String
-  name               String
-  baseUrl            String
+  id              String    @id @default(cuid())
+  orgId           String
+  name            String
+  /// xui (3x-ui / Sanaei) | pasarguard
+  type            String    @default("xui")
+  baseUrl         String
   /// AES-GCM encrypted API token or password payload (JSON)
-  credentialsEnc     String
-  authMode           String   @default("bearer")
-  webBasePath        String   @default("")
-  subPathHint        String?
-  lastTestAt         DateTime?
-  lastTestOk         Boolean?
-  lastTestMessage    String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  credentialsEnc  String
+  authMode        String    @default("bearer")
+  webBasePath     String    @default("")
+  subPathHint     String?
+  lastTestAt      DateTime?
+  lastTestOk      Boolean?
+  lastTestMessage String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  brands Brand[]
 }
 
 model Server {
@@ -173,18 +220,18 @@ model EnrollmentToken {
 }
 
 model Subscription {
-  id               String   @id @default(cuid())
-  orgId            String?
-  userId           String
-  displayName      String
-  color            String?
+  id             String   @id @default(cuid())
+  orgId          String?
+  userId         String
+  displayName    String
+  color          String?
   /// AES-GCM encrypted subscription URL
-  urlEnc           String
-  urlFingerprint   String
-  subIdHint        String?
-  panelId          String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  urlEnc         String
+  urlFingerprint String
+  subIdHint      String?
+  panelId        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   org      Organization?         @relation(fields: [orgId], references: [id], onDelete: SetNull)
   user     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -192,39 +239,39 @@ model Subscription {
 }
 
 model SubscriptionSnapshot {
-  id              String             @id @default(cuid())
-  subscriptionId  String             @unique
-  status          SubscriptionStatus @default(UNKNOWN)
-  uploadBytes     BigInt?
-  downloadBytes   BigInt?
-  totalUsedBytes  BigInt?
-  quotaBytes      BigInt?
-  remainingBytes  BigInt?
-  quotaKind       QuotaKind          @default(UNKNOWN)
-  expiryAt        DateTime?
-  expiryKind      ExpiryKind         @default(UNKNOWN)
-  enabled         Boolean?
-  dataSource      String             @default("unknown")
-  syncState       SyncState          @default(NEVER)
-  lastSyncAt      DateTime?
-  lastSyncError   String?
-  rawMetaJson     String?
-  updatedAt       DateTime           @updatedAt
+  id             String             @id @default(cuid())
+  subscriptionId String             @unique
+  status         SubscriptionStatus @default(UNKNOWN)
+  uploadBytes    BigInt?
+  downloadBytes  BigInt?
+  totalUsedBytes BigInt?
+  quotaBytes     BigInt?
+  remainingBytes BigInt?
+  quotaKind      QuotaKind          @default(UNKNOWN)
+  expiryAt       DateTime?
+  expiryKind     ExpiryKind         @default(UNKNOWN)
+  enabled        Boolean?
+  dataSource     String             @default("unknown")
+  syncState      SyncState          @default(NEVER)
+  lastSyncAt     DateTime?
+  lastSyncError  String?
+  rawMetaJson    String?
+  updatedAt      DateTime           @updatedAt
 
   subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 }
 
 model HmPanelConnection {
-  id             String    @id @default(cuid())
-  orgId          String    @unique
-  baseUrl        String?
-  credentialsEnc String?
-  configured     Boolean   @default(false)
-  lastTestAt     DateTime?
-  lastTestOk     Boolean?
+  id              String    @id @default(cuid())
+  orgId           String    @unique
+  baseUrl         String?
+  credentialsEnc  String?
+  configured      Boolean   @default(false)
+  lastTestAt      DateTime?
+  lastTestOk      Boolean?
   lastTestMessage String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 }
@@ -245,4 +292,104 @@ model AuditLog {
 
   @@index([orgId, createdAt])
   @@index([action, createdAt])
+}
+
+model RenewalRequest {
+  id             String        @id @default(cuid())
+  orgId          String
+  brandId        String
+  subId          String
+  /// AES-GCM encrypted subscription URL, used to re-resolve the account on approval
+  subUrlEnc      String
+  displayName    String?
+  panelId        String?
+  clientRef      String?
+  planId         String
+  planTitle      String
+  days           Int
+  gb             Float
+  price          String
+  payerName      String?
+  payerNote      String?
+  receiptMime    String
+  receiptData    Bytes
+  status         RenewalStatus @default(PENDING)
+  adminNote      String?
+  appliedOnPanel Boolean?
+  applyMessage   String?
+  deviceEndpoint String?
+  decidedById    String?
+  decidedAt      DateTime?
+  createdAt      DateTime      @default(now())
+
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  brand Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, status, createdAt])
+  @@index([subId])
+}
+
+model PushDevice {
+  id        String   @id @default(cuid())
+  brandId   String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  /// comma separated subIds this device follows
+  subIds    String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  brand   Brand        @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  follows PushFollow[]
+
+  @@index([brandId])
+}
+
+/// A subscription a device follows, with its link so reminders can re-check it.
+model PushFollow {
+  id        String   @id @default(cuid())
+  deviceId  String
+  subId     String
+  /// AES-GCM encrypted subscription URL
+  urlEnc    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  device PushDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, subId])
+  @@index([subId])
+}
+
+/// One reminder per account per threshold; cleared once the account is renewed.
+model ExpiryReminder {
+  id      String   @id @default(cuid())
+  brandId String
+  subId   String
+  /// days | data
+  kind    String
+  sentAt  DateTime @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([brandId, subId, kind])
+}
+
+model LookupEvent {
+  id        String   @id @default(cuid())
+  brandId   String
+  found     Boolean
+  source    String
+  createdAt DateTime @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, createdAt])
+}
+
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

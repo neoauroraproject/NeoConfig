@@ -7,7 +7,17 @@ import {
   XuiMsg,
   XuiSubInfoViewModel,
 } from './types';
-import { parseSubscriptionUserInfo } from './normalize';
+import {
+  deriveStatus,
+  expiryFromMs,
+  normalizeFromClientTraffic,
+  parseSubscriptionUserInfo,
+  quotaFromTotalBytes,
+  remaining,
+} from './normalize';
+import { NormalizedSubscription } from './types';
+
+const GB = 1024 * 1024 * 1024;
 
 export interface XuiConnectionConfig {
   /** Panel origin including webBasePath, e.g. https://panel.example.com/R8JJdluxTpdzcdkywn */
@@ -233,6 +243,142 @@ export class XuiClientService {
     }
   }
 
+  /**
+   * Find every client sharing a subId (3x-ui lets one subscription span several
+   * inbounds) and aggregate them the way the panel's own sub page does.
+   * Uses the classic `inbounds/list` API (Sanaei 2.x) and falls back to the
+   * 3.x `clients/list` API.
+   */
+  async findBySubId(
+    cfg: XuiConnectionConfig,
+    subId: string,
+  ): Promise<XuiAccountMatch | null> {
+    const inbounds = await this.listInboundsSafe(cfg);
+    if (inbounds) {
+      const matches = collectClients(inbounds).filter(
+        (m) => m.client.subId === subId || m.client.email === subId,
+      );
+      if (!matches.length) return null;
+      const online = await this.onlineEmails(cfg).catch(() => null);
+      return aggregateMatches(subId, matches, online);
+    }
+
+    // 3.x API: flat client list + per-email traffic
+    const clients = (await this.listClients(cfg)) as Array<Record<string, unknown>>;
+    const match = clients.find(
+      (c) => String(c.subId ?? '') === subId || String(c.email ?? '') === subId,
+    );
+    if (!match?.email) return null;
+    const traffic = await this.getClientTraffic(cfg, String(match.email));
+    if (!traffic) return null;
+    return {
+      subId,
+      displayName: String(match.comment || match.email),
+      snapshot: normalizeFromClientTraffic(traffic, {
+        displayName: String(match.comment || match.email),
+        subscriptionId: subId,
+      }),
+      online: null,
+      lastOnlineAt: traffic.lastOnline ? new Date(traffic.lastOnline).toISOString() : null,
+      renewable: false,
+    };
+  }
+
+  /** Extend expiry by `days`, set the quota to `gb` (0 = unlimited) and reset usage. */
+  async renewBySubId(
+    cfg: XuiConnectionConfig,
+    subId: string,
+    plan: { days: number; gb: number },
+  ): Promise<{ ok: boolean; message: string }> {
+    const inbounds = await this.listInboundsSafe(cfg);
+    if (!inbounds) {
+      return { ok: false, message: 'This panel version does not expose inbounds/list' };
+    }
+    const matches = collectClients(inbounds).filter((m) => m.client.subId === subId);
+    if (!matches.length) return { ok: false, message: 'Client not found on panel' };
+
+    const session = await this.authenticate(cfg);
+    const now = Date.now();
+    for (const { inbound, client } of matches) {
+      const current = Number(client.expiryTime) || 0;
+      const base = current > now ? current : now;
+      const expiryTime = plan.days > 0 ? base + plan.days * 86_400_000 : current;
+      const updated = {
+        ...client,
+        enable: true,
+        expiryTime,
+        totalGB: plan.gb > 0 ? Math.round(plan.gb * GB) : 0,
+      };
+      const key = clientKey(String(inbound.protocol ?? ''), client);
+      const res = await this.request<unknown>(
+        cfg,
+        'POST',
+        `/panel/api/inbounds/updateClient/${encodeURIComponent(key)}`,
+        {
+          session,
+          body: { id: inbound.id, settings: JSON.stringify({ clients: [updated] }) },
+        },
+      );
+      if (!res.success) {
+        return { ok: false, message: res.msg || `updateClient failed for ${client.email}` };
+      }
+      const reset = await this.request<unknown>(
+        cfg,
+        'POST',
+        `/panel/api/inbounds/${inbound.id}/resetClientTraffic/${encodeURIComponent(client.email)}`,
+        { session },
+      );
+      if (!reset.success) {
+        return { ok: false, message: reset.msg || `Traffic reset failed for ${client.email}` };
+      }
+    }
+    this.cache.delete(cacheKey(cfg));
+    return { ok: true, message: `Renewed ${matches.length} client(s)` };
+  }
+
+  /** Lightweight stats for the admin connection card. */
+  async stats(cfg: XuiConnectionConfig): Promise<{ clients: number; online: number | null }> {
+    const inbounds = await this.listInboundsSafe(cfg, true);
+    const online = await this.onlineEmails(cfg).catch(() => null);
+    if (inbounds) {
+      return { clients: collectClients(inbounds).length, online: online?.size ?? null };
+    }
+    const clients = await this.listClients(cfg);
+    return { clients: clients.length, online: online?.size ?? null };
+  }
+
+  private cache = new Map<string, { at: number; inbounds: XuiInbound[] }>();
+  private sessions = new Map<string, { at: number; cookie: string }>();
+
+  private async listInboundsSafe(
+    cfg: XuiConnectionConfig,
+    fresh = false,
+  ): Promise<XuiInbound[] | null> {
+    const key = cacheKey(cfg);
+    const hit = this.cache.get(key);
+    if (!fresh && hit && Date.now() - hit.at < 20_000) return hit.inbounds;
+    const session = await this.authenticate(cfg);
+    let res: XuiMsg<XuiInbound[]>;
+    try {
+      res = await this.request<XuiInbound[]>(cfg, 'GET', '/panel/api/inbounds/list', { session });
+    } catch (err) {
+      if (err instanceof PanelHttpError && err.status === 404) return null;
+      throw err;
+    }
+    if (!res.success) throw new Error(res.msg || 'Failed to list inbounds');
+    const inbounds = Array.isArray(res.obj) ? res.obj : [];
+    this.cache.set(key, { at: Date.now(), inbounds });
+    return inbounds;
+  }
+
+  private async onlineEmails(cfg: XuiConnectionConfig): Promise<Set<string>> {
+    const session = await this.authenticate(cfg);
+    const res = await this.request<string[] | null>(cfg, 'POST', '/panel/api/inbounds/onlines', {
+      session,
+    });
+    return new Set(Array.isArray(res.obj) ? res.obj : []);
+  }
+
   private async authenticate(cfg: XuiConnectionConfig): Promise<{
     cookie?: string;
     bearer?: string;
@@ -243,30 +389,40 @@ export class XuiClientService {
     if (!cfg.username || !cfg.password) {
       throw new Error('Panel credentials missing (need apiToken or username/password)');
     }
+    const key = cacheKey(cfg);
+    const cached = this.sessions.get(key);
+    if (cached && Date.now() - cached.at < 10 * 60_000) return { cookie: cached.cookie };
 
     const url = this.join(cfg.baseUrl, '/login');
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        username: cfg.username,
-        password: cfg.password,
-      }),
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+      body: new URLSearchParams({ username: cfg.username, password: cfg.password }).toString(),
       redirect: 'manual',
+      signal: AbortSignal.timeout(cfg.timeoutMs ?? 15_000),
     });
 
     const body = (await res.json().catch(() => null)) as XuiMsg | null;
     if (!body?.success) {
-      throw new Error(body?.msg || 'Panel login failed');
+      throw new Error(body?.msg || `Panel login failed (HTTP ${res.status})`);
     }
 
-    const setCookie = res.headers.get('set-cookie') || '';
-    // Documented cookie name: 3x-ui
-    const match = setCookie.match(/3x-ui=([^;]+)/);
-    if (!match) {
+    // Cookie name is `3x-ui` on current releases and `session` on older ones.
+    const cookies =
+      typeof res.headers.getSetCookie === 'function'
+        ? res.headers.getSetCookie()
+        : [res.headers.get('set-cookie') || ''];
+    const pair = cookies
+      .map((c) => c.split(';')[0]?.trim())
+      .find((c) => c && /^(3x-ui|session)=/.test(c));
+    if (!pair) {
       throw new Error('Panel login succeeded but session cookie was not returned');
     }
-    return { cookie: `3x-ui=${match[1]}` };
+    this.sessions.set(key, { at: Date.now(), cookie: pair });
+    return { cookie: pair };
   }
 
   private async request<T>(
@@ -303,10 +459,20 @@ export class XuiClientService {
         signal: controller.signal,
       });
       if (res.status >= 300 && res.status < 400) {
-        throw new Error('Unexpected redirect from panel API');
+        // Expired cookie sessions redirect to the login page.
+        this.sessions.delete(cacheKey(cfg));
+        throw new PanelHttpError('Unexpected redirect from panel API (check credentials/base path)', res.status);
       }
-      const json = (await res.json()) as XuiMsg<T>;
-      return json;
+      if (res.status === 401 || res.status === 403) {
+        this.sessions.delete(cacheKey(cfg));
+        throw new PanelHttpError('Panel rejected the credentials', res.status);
+      }
+      const text = await res.text();
+      try {
+        return JSON.parse(text) as XuiMsg<T>;
+      } catch {
+        throw new PanelHttpError(`Panel returned a non-JSON response (HTTP ${res.status})`, res.status);
+      }
     } finally {
       clearTimeout(timer);
     }
@@ -317,6 +483,157 @@ export class XuiClientService {
     const p = path.startsWith('/') ? path : `/${path}`;
     return `${base}${p}`;
   }
+}
+
+export class PanelHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+export interface XuiAccountMatch {
+  subId: string;
+  displayName: string;
+  snapshot: NormalizedSubscription;
+  online: boolean | null;
+  lastOnlineAt: string | null;
+  renewable: boolean;
+}
+
+interface XuiInbound {
+  id: number;
+  protocol?: string;
+  remark?: string;
+  settings?: string;
+  clientStats?: Array<{
+    email: string;
+    up: number;
+    down: number;
+    total: number;
+    expiryTime: number;
+    enable: boolean;
+    lastOnline?: number;
+  }> | null;
+}
+
+interface XuiInboundClient {
+  id?: string;
+  password?: string;
+  email: string;
+  enable?: boolean;
+  expiryTime?: number;
+  /** Bytes on classic 3x-ui despite the name. */
+  totalGB?: number;
+  subId?: string;
+  comment?: string;
+  [key: string]: unknown;
+}
+
+type ClientMatch = {
+  inbound: XuiInbound;
+  client: XuiInboundClient;
+  stat: NonNullable<XuiInbound['clientStats']>[number] | null;
+};
+
+function cacheKey(cfg: XuiConnectionConfig) {
+  return `${cfg.baseUrl}|${cfg.username ?? ''}|${cfg.apiToken ? 'token' : ''}`;
+}
+
+function clientKey(protocol: string, client: XuiInboundClient): string {
+  if (protocol === 'trojan') return String(client.password ?? client.email);
+  if (protocol === 'shadowsocks') return client.email;
+  return String(client.id ?? client.password ?? client.email);
+}
+
+export function collectClients(inbounds: XuiInbound[]): ClientMatch[] {
+  const out: ClientMatch[] = [];
+  for (const inbound of inbounds) {
+    let clients: XuiInboundClient[] = [];
+    try {
+      const settings = JSON.parse(inbound.settings || '{}') as { clients?: XuiInboundClient[] };
+      clients = Array.isArray(settings.clients) ? settings.clients : [];
+    } catch {
+      clients = [];
+    }
+    for (const client of clients) {
+      if (!client?.email) continue;
+      const stat = inbound.clientStats?.find((s) => s.email === client.email) ?? null;
+      out.push({ inbound, client, stat });
+    }
+  }
+  return out;
+}
+
+/** Mirrors the 3x-ui sub page: traffic is summed, any unlimited quota wins, earliest expiry wins. */
+export function aggregateMatches(
+  subId: string,
+  matches: ClientMatch[],
+  online: Set<string> | null,
+): XuiAccountMatch {
+  let up = 0;
+  let down = 0;
+  let total = 0;
+  let unlimitedQuota = false;
+  let expiry: number | null = null;
+  let anyEnabled = false;
+  let lastOnline = 0;
+
+  for (const { client, stat } of matches) {
+    up += Number(stat?.up) || 0;
+    down += Number(stat?.down) || 0;
+    const quota = Number(stat?.total ?? client.totalGB) || 0;
+    if (quota <= 0) unlimitedQuota = true;
+    else total += quota;
+    const exp = Number(stat?.expiryTime ?? client.expiryTime) || 0;
+    if (exp > 0) expiry = expiry === null ? exp : Math.min(expiry, exp);
+    if ((stat?.enable ?? client.enable) !== false) anyEnabled = true;
+    lastOnline = Math.max(lastOnline, Number(stat?.lastOnline) || 0);
+  }
+
+  const used = up + down;
+  const { quotaBytes, quotaKind } = quotaFromTotalBytes(unlimitedQuota ? 0 : total);
+  const rem = remaining(quotaKind, quotaBytes, used);
+  const negativeStart = matches.some((m) => Number(m.client.expiryTime) < 0);
+  const exp = expiry !== null ? expiryFromMs(expiry) : expiryFromMs(negativeStart ? -1 : 0);
+  let status = deriveStatus({
+    enabled: anyEnabled,
+    expiryAtMs: exp.expiryAtMs,
+    expiryKind: exp.expiryKind,
+    remainingBytes: rem,
+    quotaKind,
+  });
+  if (negativeStart && status === 'active') status = 'on_hold';
+
+  const first = matches[0].client;
+  const name = String(first.comment || first.email);
+  return {
+    subId,
+    displayName: name,
+    snapshot: {
+      subscriptionId: subId,
+      displayName: name,
+      status,
+      uploadBytes: up,
+      downloadBytes: down,
+      totalUsedBytes: used,
+      quotaBytes,
+      remainingBytes: rem,
+      quotaKind,
+      expiryAt: exp.expiryAt,
+      expiryKind: exp.expiryKind,
+      enabled: anyEnabled,
+      dataSource: '3x-ui:inbounds/list',
+      syncState: 'ok',
+      lastSyncAt: new Date().toISOString(),
+      lastSyncError: null,
+    },
+    online: online ? matches.some((m) => online.has(m.client.email)) : null,
+    lastOnlineAt: lastOnline > 0 ? new Date(lastOnline).toISOString() : null,
+    renewable: true,
+  };
 }
 
 // Re-export for consumers that import user-info parsing from the client module path

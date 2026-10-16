@@ -2,24 +2,78 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --brand-primary: #3b82f6;
-  --brand-accent: #22d3ee;
-  --surface: rgba(255, 255, 255, 0.04);
-  --border: rgba(255, 255, 255, 0.08);
-  --bg0: #0f1115;
-  --bg1: #151922;
-  --text: #f4f5f7;
-  --muted: #9aa1ae;
+/* Self-hosted fonts — nothing loads from Google (slow or blocked for many users). */
+@font-face { font-family: 'Vazirmatn'; src: url('/fonts/Vazirmatn-Regular.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Vazirmatn'; src: url('/fonts/Vazirmatn-Medium.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'Vazirmatn'; src: url('/fonts/Vazirmatn-SemiBold.woff2') format('woff2'); font-weight: 600; font-display: swap; }
+@font-face { font-family: 'Vazirmatn'; src: url('/fonts/Vazirmatn-Bold.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+/* Wide geometric numerals for the figures people come here to read. */
+@font-face { font-family: 'Unbounded'; src: url('/fonts/Unbounded-300.woff2') format('woff2'); font-weight: 300; font-display: swap; }
+@font-face { font-family: 'Unbounded'; src: url('/fonts/Unbounded-400.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Unbounded'; src: url('/fonts/Unbounded-500.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+
+/*
+ * Storefront themes. Brand colors arrive as --brand / --accent inline on the
+ * wrapper, so a live preview in the admin can sit next to the admin's own theme.
+ *  mist     — cool lavender paper, soft raised cards (default)
+ *  graphite — black instrument panel, white type
+ *  sage     — muted green-grey monochrome with a lime signal
+ */
+.sf {
+  --canvas: #e8e9f0;
+  --surface: #fbfbfd;
+  --surface-2: #f1f2f7;
+  --surface-sunk: #e2e4ec;
+  --ink: #14151b;
+  --ink-2: #5b5e6c;
+  --ink-3: #9a9ca9;
+  --line: rgba(20, 21, 27, 0.08);
+  --nav: #14151b;
+  --nav-ink: #ffffff;
+  --raise: 0 1px 0 rgba(255, 255, 255, 0.95) inset, 0 24px 48px -28px rgba(38, 42, 82, 0.35), 0 2px 6px -2px rgba(38, 42, 82, 0.08);
+  --raise-sm: 0 1px 0 rgba(255, 255, 255, 0.95) inset, 0 10px 24px -16px rgba(38, 42, 82, 0.4);
+  --on-brand: #ffffff;
+  --signal: var(--accent);
+  color: var(--ink);
+  background: var(--canvas);
+  font-family: 'Vazirmatn', Tahoma, system-ui, sans-serif;
 }
 
-html.light {
-  --surface: rgba(15, 17, 21, 0.03);
-  --border: rgba(15, 17, 21, 0.08);
-  --bg0: #f7f8fa;
-  --bg1: #ffffff;
-  --text: #151922;
-  --muted: #6b7280;
+.sf[data-theme='graphite'] {
+  --canvas: #1a1b1f;
+  --surface: #000000;
+  --surface-2: #121316;
+  --surface-sunk: #26272c;
+  --ink: #f3f3f4;
+  --ink-2: #a5a6ad;
+  --ink-3: #6d6e76;
+  --line: rgba(255, 255, 255, 0.09);
+  --nav: #f3f3f4;
+  --nav-ink: #000000;
+  --raise: 0 0 0 1px rgba(255, 255, 255, 0.06) inset, 0 30px 60px -30px rgba(0, 0, 0, 0.9);
+  --raise-sm: 0 0 0 1px rgba(255, 255, 255, 0.07) inset;
+}
+
+.sf[data-theme='sage'] {
+  --canvas: #8e978f;
+  --surface: #a2aaa1;
+  --surface-2: #99a198;
+  --surface-sunk: #879087;
+  --ink: #fafbf7;
+  --ink-2: #e6eae2;
+  --ink-3: #cdd3c9;
+  --line: rgba(255, 255, 255, 0.2);
+  --nav: #5c655d;
+  --nav-ink: #fafbf7;
+  --raise: 0 1px 0 rgba(255, 255, 255, 0.28) inset, 0 26px 50px -30px rgba(40, 52, 42, 0.55);
+  --raise-sm: 0 1px 0 rgba(255, 255, 255, 0.28) inset, 0 10px 20px -14px rgba(40, 52, 42, 0.5);
+  --signal: #c8f03c;
+}
+
+.num {
+  font-family: 'Unbounded', 'Vazirmatn', system-ui, sans-serif;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: -0.02em;
 }
 
 html,
@@ -28,12 +82,21 @@ body {
 }
 
 body {
-  color: var(--text);
-  background:
-    radial-gradient(1200px 600px at 10% -10%, color-mix(in srgb, var(--brand-primary) 18%, transparent), transparent 55%),
-    radial-gradient(900px 500px at 100% 0%, color-mix(in srgb, var(--brand-accent) 12%, transparent), transparent 50%),
-    linear-gradient(180deg, var(--bg0), var(--bg1));
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: 'Vazirmatn', Tahoma, system-ui, sans-serif;
+  line-height: 1.7;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand, #4f5bd5);
+  outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -46,12 +109,33 @@ body {
   }
 }
 
-.surface {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  backdrop-filter: blur(12px);
+/* ---------- admin console ---------- */
+.adm {
+  --canvas: #eef0f4;
+  --surface: #ffffff;
+  --surface-2: #f6f7fa;
+  --ink: #15161c;
+  --ink-2: #555867;
+  --ink-3: #8f92a0;
+  --line: #e3e5eb;
+  --brand: #4f5bd5;
+  --accent: #ff6a1a;
+  color: var(--ink);
+  background: var(--canvas);
 }
 
-.muted {
-  color: var(--muted);
+.field {
+  @apply w-full rounded-xl border bg-[var(--surface)] px-3.5 py-2.5 text-sm outline-none transition;
+  border-color: var(--line);
+}
+.field:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent);
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  scrollbar-width: none;
 }

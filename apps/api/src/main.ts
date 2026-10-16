@@ -1,5 +1,6 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
@@ -9,13 +10,15 @@ import * as bcrypt from 'bcryptjs';
 import { Role } from '@prisma/client';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { rawBody: false });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: false });
+  // Renewal receipts arrive as base64 images.
+  app.useBodyParser('json', { limit: '5mb' });
+  app.set('trust proxy', 1);
   app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cookieParser());
-  app.enableCors({
-    origin: process.env.APP_URL || true,
-    credentials: true,
-  });
+  // Storefronts live on many custom domains and reach the API same-origin
+  // through the proxy; CORS stays open for bearer-token (no cookie) calls.
+  app.enableCors({ origin: true, credentials: false });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -46,13 +49,23 @@ async function bootstrapAdmin(prisma: PrismaService) {
   if (!email || !password) return;
 
   const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-  if (existing) return;
+  if (existing) {
+    // Older installs may have an organization without a storefront.
+    if (existing.orgId && !(await prisma.brand.count({ where: { orgId: existing.orgId } }))) {
+      await prisma.brand.create({
+        data: { orgId: existing.orgId, slug: 'default', appName: process.env.APP_NAME || 'NeoConfig', isDefault: true },
+      });
+    }
+    return;
+  }
 
   const org = await prisma.organization.create({
     data: {
       name: 'Default Organization',
       slug: 'default',
-      branding: { create: { appName: process.env.APP_NAME || 'NeoConfig' } },
+      brands: {
+        create: { slug: 'default', appName: process.env.APP_NAME || 'NeoConfig', isDefault: true },
+      },
       hmpanel: { create: { configured: false } },
     },
   });

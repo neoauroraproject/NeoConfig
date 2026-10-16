@@ -1,35 +1,38 @@
 import type { Config } from 'tailwindcss';
 
+const v = (name: string) => `var(--${name})`;
+
 const config: Config = {
-  content: ['./src/**/*.{ts,tsx}'],
-  darkMode: 'class',
+  // Resolve globs from this file, not the cwd (dev may run from the repo root).
+  content: { relative: true, files: ['./src/**/*.{ts,tsx}'] },
   theme: {
     extend: {
       colors: {
-        ink: {
-          50: '#F4F5F7',
-          100: '#E6E8EC',
-          200: '#C8CCD4',
-          300: '#9AA1AE',
-          400: '#6B7280',
-          500: '#4B5563',
-          600: '#374151',
-          700: '#1F2430',
-          800: '#151922',
-          900: '#0F1115',
-          950: '#0A0C10',
-        },
-        brand: {
-          DEFAULT: 'var(--brand-primary)',
-          accent: 'var(--brand-accent)',
-        },
+        canvas: v('canvas'),
+        surface: v('surface'),
+        'surface-2': v('surface-2'),
+        sunk: v('surface-sunk'),
+        ink: v('ink'),
+        'ink-2': v('ink-2'),
+        'ink-3': v('ink-3'),
+        line: v('line'),
+        brand: v('brand'),
+        accent: v('accent'),
+        signal: v('signal'),
+        nav: v('nav'),
+        'nav-ink': v('nav-ink'),
       },
       fontFamily: {
-        sans: ['var(--font-sans)', 'Segoe UI', 'Tahoma', 'sans-serif'],
-        display: ['var(--font-display)', 'var(--font-sans)', 'sans-serif'],
+        sans: ['Vazirmatn', 'Tahoma', 'system-ui', 'sans-serif'],
+        num: ['Unbounded', 'Vazirmatn', 'sans-serif'],
       },
       boxShadow: {
-        soft: '0 10px 40px rgba(0,0,0,0.25)',
+        raise: v('raise'),
+        'raise-sm': v('raise-sm'),
+      },
+      borderRadius: {
+        '4xl': '2rem',
+        '5xl': '2.5rem',
       },
     },
   },

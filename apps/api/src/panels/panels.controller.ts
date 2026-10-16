@@ -4,11 +4,12 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
-import { IsOptional, IsString, IsUrl, MinLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUrl, MinLength } from 'class-validator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -20,6 +21,10 @@ class CreatePanelDto {
   @IsString()
   @MinLength(1)
   name!: string;
+
+  @IsOptional()
+  @IsIn(['xui', 'pasarguard'])
+  type?: string;
 
   @IsUrl({ require_tld: false })
   baseUrl!: string;
@@ -41,6 +46,16 @@ class CreatePanelDto {
   subPathHint?: string;
 }
 
+class UpdatePanelDto {
+  @IsOptional() @IsString() @MinLength(1) name?: string;
+  @IsOptional() @IsIn(['xui', 'pasarguard']) type?: string;
+  @IsOptional() @IsUrl({ require_tld: false }) baseUrl?: string;
+  @IsOptional() @IsString() apiToken?: string;
+  @IsOptional() @IsString() username?: string;
+  @IsOptional() @IsString() password?: string;
+  @IsOptional() @IsString() subPathHint?: string;
+}
+
 @Controller('api/v1/admin/panels')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ORG_ADMIN, Role.SUPER_ADMIN)
@@ -55,6 +70,11 @@ export class PanelsController {
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() body: CreatePanelDto) {
     return this.panels.create(user, body);
+  }
+
+  @Patch(':id')
+  update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: UpdatePanelDto) {
+    return this.panels.update(user, id, body);
   }
 
   @Post(':id/test')

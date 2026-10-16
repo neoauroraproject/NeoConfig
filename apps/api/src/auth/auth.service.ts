@@ -41,9 +41,11 @@ export class AuthService {
       data: {
         name: input.orgName || 'My Organization',
         slug: `${slugBase}-${Date.now().toString(36)}`,
-        branding: {
+        brands: {
           create: {
+            slug: `${slugBase}-${Date.now().toString(36)}`,
             appName: this.config.get('APP_NAME') || 'NeoConfig',
+            isDefault: true,
           },
         },
         hmpanel: { create: { configured: false } },

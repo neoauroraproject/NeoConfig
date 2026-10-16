@@ -5,17 +5,20 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AdminModule } from './admin/admin.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
-import { BrandingModule } from './branding/branding.module';
+import { BrandsModule } from './brands/brands.module';
 import { HmPanelModule } from './hmpanel/hmpanel.module';
 import { PanelsModule } from './panels/panels.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ServersModule } from './servers/servers.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { HealthController } from './health.controller';
+import { PublicModule } from './public/public.module';
+import { PushModule } from './push/push.module';
+import { RenewalsModule } from './renewals/renewals.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../../.env'] }),
     ThrottlerModule.forRoot([
       {
         ttl: Number(process.env.RATE_LIMIT_TTL || 60) * 1000,
@@ -25,9 +28,12 @@ import { HealthController } from './health.controller';
     PrismaModule,
     AuditModule,
     AuthModule,
+    PublicModule,
     SubscriptionsModule,
     PanelsModule,
-    BrandingModule,
+    BrandsModule,
+    PushModule,
+    RenewalsModule,
     ServersModule,
     HmPanelModule,
     AdminModule,

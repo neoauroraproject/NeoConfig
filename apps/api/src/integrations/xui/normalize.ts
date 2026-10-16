@@ -9,7 +9,7 @@ import {
   XuiSubInfoViewModel,
 } from './types';
 
-const EXPIRING_SOON_MS = 3 * 24 * 60 * 60 * 1000;
+export const EXPIRING_SOON_MS = 3 * 24 * 60 * 60 * 1000;
 const GB = 1024 * 1024 * 1024;
 
 export function parseSubscriptionUserInfo(
@@ -60,7 +60,7 @@ export function deriveStatus(opts: {
     opts.remainingBytes !== null &&
     opts.remainingBytes <= 0
   ) {
-    return 'expired';
+    return 'limited';
   }
   if (opts.enabled === true) return 'active';
   if (opts.enabled === null && opts.expiryKind === 'unknown' && opts.quotaKind === 'unknown') {
@@ -69,7 +69,7 @@ export function deriveStatus(opts: {
   return 'active';
 }
 
-function quotaFromTotalBytes(total: number | null | undefined): {
+export function quotaFromTotalBytes(total: number | null | undefined): {
   quotaBytes: number | null;
   quotaKind: NormalizedQuotaKind;
 } {
@@ -85,7 +85,7 @@ function quotaFromTotalBytes(total: number | null | undefined): {
   return { quotaBytes: null, quotaKind: 'unknown' };
 }
 
-function expiryFromMs(ms: number | null | undefined): {
+export function expiryFromMs(ms: number | null | undefined): {
   expiryAt: string | null;
   expiryAtMs: number | null;
   expiryKind: NormalizedExpiryKind;
@@ -109,7 +109,7 @@ function expiryFromMs(ms: number | null | undefined): {
   };
 }
 
-function remaining(
+export function remaining(
   quotaKind: NormalizedQuotaKind,
   quotaBytes: number | null,
   used: number | null,

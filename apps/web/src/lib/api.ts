@@ -1,144 +1,162 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+// Same-origin by default: Next rewrites /api/v1/* to the API, and in production
+// the reverse proxy does the same for every custom domain.
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
-export type SubscriptionDto = {
-  id: string;
+export type SubStatus =
+  | 'active'
+  | 'expiring_soon'
+  | 'expired'
+  | 'limited'
+  | 'on_hold'
+  | 'disabled'
+  | 'unknown';
+
+export type NormalizedSnapshot = {
+  subscriptionId: string;
   displayName: string;
-  color: string | null;
-  subIdHint: string | null;
-  createdAt: string;
-  updatedAt: string;
-  refreshError?: string;
-  snapshot: {
-    status: string;
-    uploadBytes: number | null;
-    downloadBytes: number | null;
-    totalUsedBytes: number | null;
-    quotaBytes: number | null;
-    remainingBytes: number | null;
-    quotaKind: string;
-    expiryAt: string | null;
-    expiryKind: string;
-    enabled: boolean | null;
-    dataSource: string;
-    syncState: string;
-    lastSyncAt: string | null;
-    lastSyncError: string | null;
+  status: SubStatus;
+  uploadBytes: number | null;
+  downloadBytes: number | null;
+  totalUsedBytes: number | null;
+  quotaBytes: number | null;
+  remainingBytes: number | null;
+  quotaKind: 'known' | 'unlimited' | 'unknown';
+  expiryAt: string | null;
+  expiryKind: 'known' | 'none' | 'unknown';
+  enabled: boolean | null;
+  dataSource: string;
+  syncState: string;
+  lastSyncAt: string | null;
+  lastSyncError: string | null;
+};
+
+export type LookupResponse = {
+  subId: string | null;
+  redactedUrl: string;
+  snapshot: NormalizedSnapshot;
+  online: boolean | null;
+  lastOnlineAt: string | null;
+  renewable: boolean;
+};
+
+export type RenewalPlan = { id: string; title: string; days: number; gb: number; price: string };
+
+export type Branding = {
+  slug: string;
+  appName: string;
+  shortName: string;
+  tagline: string | null;
+  logoUrl: string | null;
+  iconUrl: string | null;
+  primaryColor: string;
+  accentColor: string;
+  theme: 'mist' | 'graphite' | 'sage';
+  defaultLocale: string;
+  supportUrl: string | null;
+  supportTelegram: string | null;
+  contactEmail: string | null;
+  allowCopyLink: boolean;
+  renewal: {
+    cardNumber: string;
+    cardHolder: string | null;
+    bankName: string | null;
+    note: string | null;
+    plans: RenewalPlan[];
   } | null;
 };
 
-export type Branding = {
-  appName: string;
-  shortName: string;
-  logoUrl: string | null;
-  primaryColor: string;
-  accentColor: string;
-  themeDefault: string;
-  defaultLocale: string;
-  enabledLocales: string[];
-  supportUrl: string | null;
-  allowCopyLink: boolean;
-  pwaThemeColor: string;
-  pwaBgColor: string;
+export type PublicRenewal = {
+  id: string;
+  subId: string;
+  planTitle: string;
+  price: string;
+  status: 'pending' | 'approved' | 'rejected';
+  adminNote: string | null;
+  createdAt: string;
+  decidedAt: string | null;
 };
 
-function authHeaders(token?: string | null): HeadersInit {
-  const h: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) h.Authorization = `Bearer ${token}`;
-  return h;
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
 }
 
-async function request<T>(
+export async function request<T>(
   path: string,
   opts: RequestInit & { token?: string | null } = {},
 ): Promise<T> {
   const { token, ...init } = opts;
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: { ...authHeaders(token), ...(init.headers || {}) },
-    cache: 'no-store',
-  });
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...init,
+      headers: { ...headers, ...(init.headers as Record<string, string> | undefined) },
+      cache: 'no-store',
+    });
+  } catch {
+    throw new ApiError('network', 0);
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.message || body.error || `Request failed (${res.status})`);
+    const msg =
+      (Array.isArray(body.message) ? body.message.join(', ') : body.message) ||
+      body.error ||
+      `Request failed (${res.status})`;
+    throw new ApiError(msg, res.status);
   }
   return res.json() as Promise<T>;
 }
 
-export const api = {
-  branding: (tenant?: string) =>
-    request<Branding>(`/api/v1/branding${tenant ? `?tenant=${tenant}` : ''}`),
-  login: (email: string, password: string) =>
-    request<{ accessToken: string; user: { id: string; email: string; role: string } }>(
-      '/api/v1/auth/login',
-      { method: 'POST', body: JSON.stringify({ email, password }) },
-    ),
-  register: (email: string, password: string, name?: string) =>
-    request<{ accessToken: string; user: { id: string; email: string; role: string } }>(
-      '/api/v1/auth/register',
-      { method: 'POST', body: JSON.stringify({ email, password, name }) },
-    ),
-  me: (token: string) => request('/api/v1/auth/me', { token }),
-  listSubscriptions: (token: string) =>
-    request<SubscriptionDto[]>('/api/v1/subscriptions', { token }),
-  previewSubscription: (token: string, url: string) =>
-    request<{ preview: unknown; redactedUrl: string }>('/api/v1/subscriptions/preview', {
+export const publicApi = {
+  branding: (tenant: string) =>
+    request<Branding>(`/api/v1/public/branding?tenant=${encodeURIComponent(tenant)}`),
+
+  lookup: (url: string, tenant: string) =>
+    request<LookupResponse>('/api/v1/public/lookup', {
       method: 'POST',
-      token,
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url, tenant }),
     }),
-  createSubscription: (
-    token: string,
-    body: { url: string; displayName?: string; color?: string },
-  ) =>
-    request<SubscriptionDto>('/api/v1/subscriptions', {
+
+  pushKey: () => request<{ publicKey: string }>('/api/v1/public/push/key'),
+
+  pushSubscribe: (tenant: string, subscription: PushSubscriptionJSON, accounts: PushFollow[]) =>
+    request<{ ok: boolean }>('/api/v1/public/push/subscribe', {
       method: 'POST',
-      token,
-      body: JSON.stringify(body),
+      body: JSON.stringify({ tenant, subscription, subIds: accounts.map((a) => a.subId), accounts }),
     }),
-  refreshSubscription: (token: string, id: string) =>
-    request<SubscriptionDto>(`/api/v1/subscriptions/${id}/refresh`, {
+
+  pushUnsubscribe: (endpoint: string) =>
+    request<{ ok: boolean }>('/api/v1/public/push/unsubscribe', {
       method: 'POST',
-      token,
+      body: JSON.stringify({ endpoint }),
     }),
-  deleteSubscription: (token: string, id: string) =>
-    request<{ ok: boolean }>(`/api/v1/subscriptions/${id}`, {
-      method: 'DELETE',
-      token,
-    }),
-  renewal: (token: string, id: string) =>
-    request<{ available: boolean; reason?: string }>(
-      `/api/v1/subscriptions/${id}/renewal`,
-      { token },
-    ),
-  adminOverview: (token: string) => request('/api/v1/admin/overview', { token }),
-  adminBranding: (token: string) => request<Branding>('/api/v1/admin/branding', { token }),
-  updateBranding: (token: string, body: Partial<Branding>) =>
-    request<Branding>('/api/v1/admin/branding', {
-      method: 'PATCH',
-      token,
-      body: JSON.stringify(body),
-    }),
-  listPanels: (token: string) => request('/api/v1/admin/panels', { token }),
-  createPanel: (token: string, body: Record<string, unknown>) =>
-    request('/api/v1/admin/panels', {
+
+  createRenewal: (body: {
+    tenant: string;
+    url: string;
+    planId: string;
+    receipt: string;
+    payerName?: string;
+    payerNote?: string;
+    deviceEndpoint?: string;
+  }) =>
+    request<PublicRenewal>('/api/v1/public/renewals', { method: 'POST', body: JSON.stringify(body) }),
+
+  renewalStatus: (ids: string[]) =>
+    request<PublicRenewal[]>('/api/v1/public/renewals/status', {
       method: 'POST',
-      token,
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ids }),
     }),
-  testPanel: (token: string, id: string) =>
-    request(`/api/v1/admin/panels/${id}/test`, { method: 'POST', token }),
-  listServers: (token: string) => request('/api/v1/admin/servers', { token }),
-  createServer: (token: string, name: string) =>
-    request<{
-      installCommand: string;
-      enrollmentToken: string;
-      warning: string;
-      server: { id: string; name: string };
-    }>('/api/v1/admin/servers', {
-      method: 'POST',
-      token,
-      body: JSON.stringify({ name }),
-    }),
-  hmpanel: (token: string) => request('/api/v1/admin/hmpanel', { token }),
-  audit: (token: string) => request('/api/v1/admin/audit', { token }),
 };
+
+/** A subscription this device follows; the link lets the server send expiry reminders. */
+export interface PushFollow {
+  subId: string;
+  url: string;
+}

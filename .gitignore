@@ -16,3 +16,4 @@ agent/neoconfig-agent.exe
 .idea/
 .vscode/
 apps/web/.next/
+*.tsbuildinfo

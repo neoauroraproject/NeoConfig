@@ -102,6 +102,8 @@ export type NormalizedStatus =
   | 'active'
   | 'expiring_soon'
   | 'expired'
+  | 'limited'
+  | 'on_hold'
   | 'disabled'
   | 'unknown';
 export type NormalizedSyncState = 'never' | 'ok' | 'stale' | 'failed';

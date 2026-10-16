@@ -2,15 +2,15 @@ FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY apps/api/package.json apps/api/
-RUN npm install --workspace=@subpane/api --include-workspace-root
+RUN npm install --workspace=@neoconfig/api --include-workspace-root
 
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm install --workspace=@subpane/api --include-workspace-root \
-  && npm run prisma:generate --workspace=@subpane/api \
-  && npm run build --workspace=@subpane/api
+RUN npm install --workspace=@neoconfig/api --include-workspace-root \
+  && npm run prisma:generate --workspace=@neoconfig/api \
+  && npm run build --workspace=@neoconfig/api
 
 FROM node:22-alpine
 WORKDIR /app

@@ -115,6 +115,9 @@ const fa = {
   usedPercent: 'درصد مصرف',
   daysRemaining: 'روزهای باقی‌مانده',
   lastSynced: 'آخرین به‌روزرسانی اطلاعات',
+  theme: 'پوسته',
+  err_receiptUsed: 'این رسید قبلاً برای یک تمدید استفاده شده است.',
+  err_tooManyPending: 'چند درخواست تمدید در انتظار بررسی داری؛ کمی صبر کن.',
 } as const;
 
 export type DictKey = keyof typeof fa;
@@ -234,6 +237,9 @@ const en: Record<DictKey, string> = {
   usedPercent: 'Used',
   daysRemaining: 'Days left',
   lastSynced: 'Data updated',
+  theme: 'Theme',
+  err_receiptUsed: 'This receipt was already used for a renewal.',
+  err_tooManyPending: 'You already have requests waiting for review.',
 };
 
 const dicts: Record<Locale, Record<DictKey, string>> = { fa, en };

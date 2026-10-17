@@ -18,6 +18,10 @@
  *  mist     — cool lavender paper, soft raised cards (default)
  *  graphite — black instrument panel, white type
  *  sage     — muted green-grey monochrome with a lime signal
+ *  moss     — smoky glass over soft green light, lime highlights
+ *  pearl    — near-black cards with a pearl (lime → lavender) sheen
+ *
+ * --hi / --on-hi paint the one highlighted tile (and the pearl hero); they may be gradients.
  */
 .sf {
   --canvas: #e8e9f0;
@@ -34,6 +38,10 @@
   --raise-sm: 0 1px 0 rgba(255, 255, 255, 0.95) inset, 0 10px 24px -16px rgba(38, 42, 82, 0.4);
   --on-brand: #ffffff;
   --signal: var(--accent);
+  --hi: var(--brand);
+  --on-hi: var(--on-brand);
+  --sheet: var(--surface);
+  --on-ink: var(--surface);
   color: var(--ink);
   background: var(--canvas);
   font-family: 'Vazirmatn', Tahoma, system-ui, sans-serif;
@@ -70,6 +78,103 @@
   --signal: #c8f03c;
 }
 
+.sf[data-theme='moss'] {
+  --canvas: #252724;
+  --surface: rgba(255, 255, 255, 0.075);
+  --surface-2: rgba(255, 255, 255, 0.1);
+  --surface-sunk: rgba(255, 255, 255, 0.14);
+  --ink: #f3f5ee;
+  --ink-2: #c4c9bb;
+  --ink-3: #8d9383;
+  --line: rgba(255, 255, 255, 0.1);
+  --nav: rgba(60, 63, 58, 0.72);
+  --nav-ink: #f3f5ee;
+  --raise: 0 0 0 1px rgba(255, 255, 255, 0.07) inset, 0 24px 48px -28px rgba(0, 0, 0, 0.7);
+  --raise-sm: 0 0 0 1px rgba(255, 255, 255, 0.08) inset, 0 10px 24px -18px rgba(0, 0, 0, 0.6);
+  --signal: #d7f59e;
+  --hi: #d7f59e;
+  --on-hi: #161812;
+  --sheet: #2e312c;
+  --on-ink: #1b1d18;
+  isolation: isolate;
+}
+/* Light pooling behind the glass, pinned to the viewport. */
+.sf[data-theme='moss']::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(42% 30% at 82% 6%, rgba(190, 236, 120, 0.42), transparent 70%),
+    radial-gradient(48% 36% at 6% 72%, rgba(150, 196, 90, 0.34), transparent 70%),
+    radial-gradient(40% 30% at 70% 96%, rgba(120, 150, 80, 0.3), transparent 70%);
+  filter: blur(18px);
+}
+.sf[data-theme='moss'] .bg-surface,
+.sf[data-theme='moss'] .bg-surface-2,
+.sf[data-theme='moss'] .bg-nav {
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  backdrop-filter: blur(22px) saturate(140%);
+}
+
+.sf[data-theme='pearl'] {
+  --canvas: #0f0f10;
+  --surface: #1c1c1e;
+  --surface-2: #252527;
+  --surface-sunk: #303033;
+  --ink: #f2f2f0;
+  --ink-2: #a8a8ad;
+  --ink-3: #6e6e74;
+  --line: rgba(255, 255, 255, 0.08);
+  --nav: #1c1c1e;
+  --nav-ink: #f2f2f0;
+  --raise: 0 0 0 1px rgba(255, 255, 255, 0.05) inset, 0 30px 60px -34px rgba(0, 0, 0, 0.9);
+  --raise-sm: 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+  --pearl: linear-gradient(118deg, #c3cdbb 0%, #e8e7a4 34%, #d3d5f1 68%, #e5e2ae 100%);
+  --signal: #e8e7a4;
+  --hi: var(--pearl);
+  --on-hi: #131313;
+  isolation: isolate;
+}
+.sf[data-theme='pearl']::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(30% 40% at 0% 50%, rgba(200, 210, 190, 0.16), transparent 70%),
+    radial-gradient(30% 40% at 100% 45%, rgba(232, 231, 164, 0.14), transparent 70%);
+}
+
+/* The figure people open the app for. Pearl puts it on the sheen with dark type. */
+.sf[data-theme='pearl'] .sf-hero {
+  --ink: #141414;
+  --ink-2: #3d3e35;
+  --ink-3: #75766a;
+  background: var(--pearl);
+  border-radius: 2.25rem;
+  padding: 1.5rem;
+}
+.sf[data-theme='pearl'] .sf-hero .bg-surface {
+  --ink: #f2f2f0;
+  --ink-2: #a8a8ad;
+  --ink-3: #6e6e74;
+}
+.sf-pill {
+  background: var(--nav-pill, var(--surface));
+  color: var(--nav-pill-ink, var(--ink));
+}
+.sf[data-theme='pearl'] {
+  --nav-pill: var(--pearl);
+  --nav-pill-ink: #131313;
+}
+.sf[data-theme='moss'] {
+  --nav-pill: #d7f59e;
+  --nav-pill-ink: #161812;
+}
+
 .num {
   font-family: 'Unbounded', 'Vazirmatn', system-ui, sans-serif;
   font-feature-settings: 'tnum' 1;
@@ -83,7 +188,7 @@ body {
 
 /* Desktop: the phone-width app floats on a soft brand-tinted backdrop instead of a flat canvas. */
 @media (min-width: 640px) {
-  .sf-root {
+  .sf-root:not([data-theme='moss']):not([data-theme='pearl']) {
     background:
       radial-gradient(60vw 60vh at 15% 10%, color-mix(in srgb, var(--brand) 16%, transparent), transparent 70%),
       radial-gradient(50vw 55vh at 85% 90%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%),
@@ -96,6 +201,51 @@ body {
   font-family: 'Vazirmatn', Tahoma, system-ui, sans-serif;
   line-height: 1.7;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* ---------- feel like an installed app on phones ---------- */
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+/* No browser pull-to-reload or page rubber band: the storefront has its own pull to refresh. */
+html:has(.sf-root),
+html:has(.sf-root) body {
+  overscroll-behavior-y: none;
+}
+.sf button,
+.sf a,
+.sf [role='button'],
+.sf [role='radio'],
+.sf [role='tab'],
+.sf label[for] {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+/* Press feedback the instant a finger lands; `scale` composes with any transform already set. */
+.sf button:not(:disabled),
+.sf a[href],
+.sf .press {
+  transition: scale 140ms cubic-bezier(0.22, 1, 0.36, 1), opacity 140ms;
+}
+.sf button:not(:disabled):active,
+.sf a[href]:active,
+.sf .press:active {
+  scale: 0.97;
+}
+/* iOS zooms into inputs under 16px and never zooms back out. */
+@media (pointer: coarse) {
+  .sf input,
+  .sf textarea,
+  .sf select {
+    font-size: 16px;
+  }
+}
+.sf {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 button,

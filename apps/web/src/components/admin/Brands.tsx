@@ -2,17 +2,15 @@
 
 import { ArrowRight, ExternalLink, Globe, Plus, RefreshCw, Send, ShieldCheck, Trash2 } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import type { Branding, RenewalPlan } from '@/lib/api';
+import { THEME_IDS, type Branding, type ThemeId } from '@/lib/api';
+import { THEME_SWATCH } from '@/lib/themes';
 import { relativeTime } from '@/lib/format';
 import { AdminBrand, Member, Panel, adminApi } from './adminApi';
 import { PhonePreview } from './PhonePreview';
+import { PlansEditor } from './PlansEditor';
 import { Button, Card, Empty, Field, PageHeader, StatusDot, Toggle, errMsg } from './ui';
 
-const THEMES = [
-  { id: 'mist', label: 'مه', canvas: '#e8e9f0', card: '#fbfbfd' },
-  { id: 'graphite', label: 'گرافیت', canvas: '#1a1b1f', card: '#000000' },
-  { id: 'sage', label: 'مریم‌گلی', canvas: '#8e978f', card: '#a2aaa1' },
-] as const;
+const THEMES = THEME_IDS.map((id) => ({ id, label: THEME_SWATCH[id].fa, ...THEME_SWATCH[id] }));
 
 export function Brands({ isAdmin }: { isAdmin: boolean }) {
   const [brands, setBrands] = useState<AdminBrand[] | null>(null);
@@ -194,6 +192,7 @@ function BrandEditor({
         primaryColor: draft.primaryColor,
         accentColor: draft.accentColor,
         theme: draft.theme,
+        themeChoices: draft.themeChoices ?? [],
         defaultLocale: draft.defaultLocale,
         supportUrl: draft.supportUrl ?? '',
         supportTelegram: draft.supportTelegram ?? '',
@@ -238,6 +237,7 @@ function BrandEditor({
       primaryColor: draft.primaryColor,
       accentColor: draft.accentColor,
       theme: draft.theme,
+      themes: [draft.theme, ...(draft.themeChoices ?? []).filter((t) => t !== draft.theme)],
       defaultLocale: draft.defaultLocale,
       supportUrl: draft.supportUrl,
       supportTelegram: draft.supportTelegram,
@@ -367,7 +367,8 @@ function LookTab({ draft, set, brandId, onLogo }: { draft: AdminBrand; set: SetF
       </Card>
       <Card>
         <h2 className="mb-4 font-medium">رنگ و پوسته</h2>
-        <div className="grid grid-cols-3 gap-3" role="radiogroup" aria-label="پوسته">
+        <p className="mb-2 text-xs text-[var(--ink-2)]">پوستهٔ پیش‌فرض</p>
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-5" role="radiogroup" aria-label="پوسته">
           {THEMES.map((t) => (
             <button
               key={t.id}
@@ -378,12 +379,38 @@ function LookTab({ draft, set, brandId, onLogo }: { draft: AdminBrand; set: SetF
               className={`overflow-hidden rounded-xl border-2 text-start ${draft.theme === t.id ? 'border-[var(--ink)]' : 'border-transparent'}`}
             >
               <div className="flex h-16 items-end gap-1.5 p-2" style={{ background: t.canvas }}>
-                <span className="h-10 flex-1 rounded-lg" style={{ background: t.card }} />
-                <span className="h-7 w-7 rounded-lg" style={{ background: draft.primaryColor }} />
+                <span className="h-10 flex-1 rounded-lg" style={{ background: t.card, boxShadow: '0 0 0 1px rgba(127,127,127,.2) inset' }} />
+                <span className="h-7 w-7 rounded-lg" style={{ background: t.id === 'moss' || t.id === 'pearl' ? t.hi : draft.primaryColor }} />
               </div>
               <p className="bg-[var(--surface-2)] px-3 py-2 text-xs">{t.label}</p>
             </button>
           ))}
+        </div>
+        <p className="mb-2 mt-5 text-xs text-[var(--ink-2)]">پوسته‌هایی که کاربر از منوی اپ می‌تواند عوض کند</p>
+        <div className="flex flex-wrap gap-2">
+          {THEMES.map((t) => {
+            const isDefault = draft.theme === t.id;
+            const on = isDefault || (draft.themeChoices ?? []).includes(t.id);
+            return (
+              <label
+                key={t.id}
+                className={`inline-flex h-9 cursor-pointer items-center gap-2 rounded-full border px-3 text-xs ${on ? 'border-[var(--ink)]' : 'border-[var(--line)] text-[var(--ink-2)]'} ${isDefault ? 'opacity-70' : ''}`}
+              >
+                <input
+                  type="checkbox"
+                  className="accent-[var(--ink)]"
+                  checked={on}
+                  disabled={isDefault}
+                  onChange={(e) => {
+                    const cur = (draft.themeChoices ?? []).filter((x) => x !== t.id);
+                    set('themeChoices', (e.target.checked ? [...cur, t.id] : cur) as ThemeId[]);
+                  }}
+                />
+                {t.label}
+                {isDefault && <span className="text-[10px]">(پیش‌فرض)</span>}
+              </label>
+            );
+          })}
         </div>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <ColorField id="b-primary" label="رنگ اصلی" hint="کاشی روزها، دکمه‌ها" value={draft.primaryColor} onChange={(v) => set('primaryColor', v)} />
@@ -566,19 +593,8 @@ function DomainsTab({
   );
 }
 
-const USER_OPTIONS = [
-  { v: 0, label: 'بدون تغییر' },
-  { v: 1, label: 'تک‌کاربره' },
-  { v: 2, label: 'دوکاربره' },
-  { v: 3, label: '۳ کاربره' },
-  { v: 4, label: '۴ کاربره' },
-  { v: 5, label: '۵ کاربره' },
-];
-
 function RenewalTab({ draft, set }: { draft: AdminBrand; set: SetFn }) {
   const plans = draft.plans;
-  const update = (i: number, patch: Partial<RenewalPlan>) => set('plans', plans.map((p, j) => (j === i ? { ...p, ...patch } : p)));
-  const num = (v: string) => (v === '' ? 0 : Math.max(0, Number(v) || 0));
   const usable = plans.filter((p) => p.title.trim() && p.price.trim());
   const missing = [
     !draft.renewalEnabled && 'روشن کردن تمدید',
@@ -612,65 +628,7 @@ function RenewalTab({ draft, set }: { draft: AdminBrand; set: SetFn }) {
           </Field>
         </div>
       </Card>
-      <Card>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-medium">پلن‌ها</h2>
-          <Button
-            variant="secondary"
-            onClick={() =>
-              set('plans', [...plans, { id: `p${Date.now().toString(36)}`, title: '', days: 30, gb: 50, price: '', users: 1, mode: 'add' }])
-            }
-            disabled={plans.length >= 12}
-          >
-            <Plus className="h-4 w-4" /> پلن جدید
-          </Button>
-        </div>
-        <p className="mb-3 text-xs leading-7 text-[var(--ink-3)]">
-          <b>افزودن به سرویس:</b> روزها به انقضای فعلی و گیگ‌ها به حجم فعلی اضافه می‌شوند و مصرف می‌ماند (سرویس نامحدود، نامحدود می‌ماند).{' '}
-          <b>دورهٔ جدید:</b> حجم روی مقدار پلن تنظیم و مصرف صفر می‌شود؛ گیگ ۰ یعنی نامحدود. «کاربر مجاز» تعداد اتصال هم‌زمان را روی پنل تنظیم می‌کند.
-        </p>
-        <div className="space-y-2">
-          {plans.map((p, i) => (
-            <div key={p.id} className="grid grid-cols-2 gap-2 rounded-xl bg-[var(--surface-2)] p-3 sm:grid-cols-6 sm:items-end">
-              <div className="col-span-2">
-                <Field label="عنوان" htmlFor={`pl-t-${i}`}>
-                  <input id={`pl-t-${i}`} className="field" value={p.title} onChange={(e) => update(i, { title: e.target.value })} placeholder="یک‌ماهه ۵۰ گیگ تک‌کاربره" />
-                </Field>
-              </div>
-              <Field label="روز" htmlFor={`pl-d-${i}`}>
-                <input id={`pl-d-${i}`} type="number" min={0} dir="ltr" className="field" value={p.days || ''} placeholder="0" onChange={(e) => update(i, { days: num(e.target.value) })} />
-              </Field>
-              <Field label="گیگ" htmlFor={`pl-g-${i}`}>
-                <input id={`pl-g-${i}`} type="number" min={0} step="any" dir="ltr" className="field" value={p.gb || ''} placeholder="0" onChange={(e) => update(i, { gb: num(e.target.value) })} />
-              </Field>
-              <Field label="کاربر مجاز" htmlFor={`pl-u-${i}`}>
-                <select id={`pl-u-${i}`} className="field" value={p.users ?? 0} onChange={(e) => update(i, { users: Number(e.target.value) })}>
-                  {USER_OPTIONS.map((o) => (
-                    <option key={o.v} value={o.v}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="نوع تمدید" htmlFor={`pl-m-${i}`}>
-                <select id={`pl-m-${i}`} className="field" value={p.mode ?? 'add'} onChange={(e) => update(i, { mode: e.target.value as 'add' | 'reset' })}>
-                  <option value="add">افزودن به سرویس</option>
-                  <option value="reset">دورهٔ جدید</option>
-                </select>
-              </Field>
-              <div className="col-span-2 sm:col-span-5">
-                <Field label="قیمت" htmlFor={`pl-p-${i}`}>
-                  <input id={`pl-p-${i}`} className="field" value={p.price} onChange={(e) => update(i, { price: e.target.value })} placeholder="۱۵۰٬۰۰۰ تومان" />
-                </Field>
-              </div>
-              <Button variant="ghost" aria-label={`حذف پلن ${p.title}`} className="!px-3" onClick={() => set('plans', plans.filter((_, j) => j !== i))}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          ))}
-          {plans.length === 0 && <p className="text-sm text-[var(--ink-3)]">هنوز پلنی تعریف نشده.</p>}
-        </div>
-      </Card>
+      <PlansEditor plans={plans} onChange={(next) => set('plans', next)} />
     </div>
   );
 }

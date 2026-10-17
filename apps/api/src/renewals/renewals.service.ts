@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHash } from 'crypto';
 import { RenewalRequest, RenewalStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../auth/auth.types';
@@ -11,7 +12,7 @@ import { describeTerms, normalizeTerms } from '../panels/renewal-terms';
 import { PrismaService } from '../prisma/prisma.service';
 import { PublicService } from '../public/public.service';
 import { PushService } from '../push/push.service';
-import { TelegramService } from '../telegram/telegram.service';
+import { ReviewInfo, TelegramService } from '../telegram/telegram.service';
 
 type RenewalRow = Omit<RenewalRequest, 'receiptData'>;
 
@@ -44,10 +45,17 @@ export class RenewalsService {
   }) {
     const brand = await this.brands.resolve(input.tenant);
     if (!brand?.renewalEnabled) throw new BadRequestException('Renewal is not available here');
-    const plan = parsePlans(brand.plansJson).find((p) => p.id === input.planId);
+    const plan = parsePlans(brand.plansJson).find((p) => p.id === input.planId && p.price.trim());
     if (!plan) throw new BadRequestException('Choose one of the listed plans');
 
     const { mime, data } = parseDataUrl(input.receipt);
+    const receiptHash = createHash('sha256').update(data).digest('hex');
+    // A receipt that already paid for a renewal cannot pay for another one.
+    const used = await this.prisma.renewalRequest.findFirst({
+      where: { brandId: brand.id, receiptHash, status: RenewalStatus.APPROVED },
+      select: { id: true },
+    });
+    if (used) throw new BadRequestException('This receipt was already used for a renewal');
 
     const found = await this.lookup.lookup(brand, input.url);
     const subId = found.subId ?? found.snapshot.subscriptionId;
@@ -80,10 +88,13 @@ export class RenewalsService {
         payerNote: input.payerNote?.trim().slice(0, 300) || null,
         receiptMime: mime,
         receiptData: new Uint8Array(data),
+        receiptHash,
         deviceEndpoint: input.deviceEndpoint?.slice(0, 1024) || null,
       },
     });
-    void this.telegram.renewalReceived(brand, row, { mime, data }).catch(() => undefined);
+    void this.review(row, found.snapshot)
+      .then((review) => this.telegram.renewalReceived(brand, { ...row, review }, { mime, data }))
+      .catch(() => undefined);
     return this.toPublic(row);
   }
 
@@ -160,12 +171,83 @@ export class RenewalsService {
    * has already checked the secret and the chat; renewals are applied on the
    * panel whenever the account was found there.
    */
-  async decideFromTelegram(brandId: string, id: string, approve: boolean, by: string) {
+  async decideFromTelegram(
+    brandId: string,
+    id: string,
+    decision: { approve: boolean; apply?: boolean; note?: string },
+    by: string,
+  ) {
     const row = await this.prisma.renewalRequest.findFirst({ where: { id, brandId }, omit: { receiptData: true } });
     if (!row) throw new NotFoundException('Request not found');
-    return approve
-      ? this.decideApprove(row, { apply: Boolean(row.panelId && row.clientRef), by, userId: null, telegramOrigin: true })
-      : this.decideReject(row, { by, userId: null, telegramOrigin: true });
+    // Approve always tries the panel (resolveTarget re-runs the lookup if the account moved);
+    // "manual" approves without touching it, after the panel refused.
+    return decision.approve
+      ? this.decideApprove(row, { apply: decision.apply ?? true, note: decision.note, by, userId: null, telegramOrigin: true })
+      : this.decideReject(row, { note: decision.note, by, userId: null, telegramOrigin: true });
+  }
+
+  /** /pending in the team chat: the oldest waiting requests, re-sent with their receipts. */
+  async resendPending(brandId: string, limit = 8) {
+    const brand = await this.prisma.brand.findUnique({ where: { id: brandId } });
+    if (!brand) return 0;
+    const rows = await this.prisma.renewalRequest.findMany({
+      where: { brandId, status: RenewalStatus.PENDING },
+      orderBy: { createdAt: 'asc' },
+      take: limit,
+    });
+    for (const row of rows) {
+      const review = await this.review(row, undefined);
+      await this.telegram.renewalReceived(brand, { ...row, review }, { mime: row.receiptMime, data: Buffer.from(row.receiptData) });
+    }
+    return rows.length;
+  }
+
+  /** /stats in the team chat. */
+  async stats(brandId: string) {
+    const now = new Date();
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const month = new Date(now.getFullYear(), now.getMonth(), 1);
+    const count = (where: object) => this.prisma.renewalRequest.count({ where: { brandId, ...where } });
+    const [pending, todayApproved, todayRejected, monthApproved, monthRejected, failed] = await Promise.all([
+      count({ status: RenewalStatus.PENDING }),
+      count({ status: RenewalStatus.APPROVED, decidedAt: { gte: day } }),
+      count({ status: RenewalStatus.REJECTED, decidedAt: { gte: day } }),
+      count({ status: RenewalStatus.APPROVED, decidedAt: { gte: month } }),
+      count({ status: RenewalStatus.REJECTED, decidedAt: { gte: month } }),
+      count({ status: RenewalStatus.PENDING, appliedOnPanel: false }),
+    ]);
+    return { pending, todayApproved, todayRejected, monthApproved, monthRejected, failed };
+  }
+
+  /** Automatic checks shown under each receipt in Telegram. */
+  private async review(
+    row: { id: string; brandId: string; subId: string; receiptHash: string | null; panelId: string | null; clientRef: string | null },
+    current: ReviewInfo['current'] | undefined,
+  ): Promise<ReviewInfo> {
+    const [duplicate, approved, pendingCount] = await Promise.all([
+      row.receiptHash
+        ? this.prisma.renewalRequest.findFirst({
+            where: { brandId: row.brandId, receiptHash: row.receiptHash, id: { not: row.id } },
+            select: { id: true, createdAt: true, status: true, displayName: true },
+            orderBy: { createdAt: 'asc' },
+          })
+        : null,
+      this.prisma.renewalRequest.findMany({
+        where: { brandId: row.brandId, subId: row.subId, status: RenewalStatus.APPROVED },
+        select: { decidedAt: true },
+        orderBy: { decidedAt: 'desc' },
+        take: 50,
+      }),
+      this.prisma.renewalRequest.count({ where: { brandId: row.brandId, subId: row.subId, status: RenewalStatus.PENDING } }),
+    ]);
+    return {
+      current: current ?? null,
+      duplicateOf: duplicate,
+      approvedBefore: approved.length,
+      lastApprovedAt: approved[0]?.decidedAt ?? null,
+      pendingCount,
+      canApply: Boolean(row.panelId && row.clientRef),
+    };
   }
 
   private async decideApprove(

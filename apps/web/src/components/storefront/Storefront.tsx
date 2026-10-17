@@ -13,12 +13,14 @@ import {
   saveRenewals,
   upsertAccount,
 } from '@/lib/accounts';
-import { ApiError, Branding, LookupResponse, PublicRenewal, publicApi } from '@/lib/api';
+import { ApiError, Branding, LookupResponse, PublicRenewal, ThemeId, publicApi } from '@/lib/api';
+import { THEME_CANVAS } from '@/lib/themes';
 import { Locale, isRtl } from '@/lib/i18n';
 import { PushState, disablePush, enablePush, followsOf, isIos, isStandalone, pushState, syncPush } from '@/lib/push';
 import { demoHistory, demoLookup } from './demo';
 import { Dashboard } from './Dashboard';
 import { Onboarding } from './Onboarding';
+import { PullToRefresh } from './PullToRefresh';
 import { RenewSheet } from './RenewSheet';
 import { AccountsSheet, InstallIosSheet, MenuSheet, QrSheet } from './Sheets';
 import { AppsSheet, InfoSheet } from './InfoSheets';
@@ -41,6 +43,9 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
   const [refreshing, setRefreshing] = useState(false);
   const [sheet, setSheet] = useState<SheetName>(null);
   const [locale, setLocale] = useState<Locale>(brand.defaultLocale === 'en' ? 'en' : 'fa');
+  const themes = brand.themes?.length ? brand.themes : [brand.theme];
+  const [theme, setTheme] = useState<ThemeId>(brand.theme);
+  const shown = useMemo(() => ({ ...brand, theme }), [brand, theme]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
   const [standalone, setStandalone] = useState(true);
@@ -57,12 +62,19 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
   }, []);
 
   const active = state.accounts.find((a) => a.id === state.activeId) ?? null;
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const lastSync = useRef(0);
+  const syncing = useRef(new Set<string>());
+  const seenStatus = useRef<Record<string, string>>({});
 
   // ---------- boot ----------
   useEffect(() => {
     try {
       const saved = localStorage.getItem('nc.locale');
       if (saved === 'fa' || saved === 'en') setLocale(saved);
+      const savedTheme = localStorage.getItem(`nc.theme.${storeKey}`) as ThemeId | null;
+      if (savedTheme && themes.includes(savedTheme)) setTheme(savedTheme);
     } catch {
       /* ignore */
     }
@@ -113,10 +125,23 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
     const load = () =>
       publicApi
         .renewalStatus(tracked.map((r) => r.id))
-        .then((rows) => !stop && setRenewals(rows))
+        .then((rows) => {
+          if (stop) return;
+          // Just approved: the panel already has the new time and data — show it now.
+          for (const r of rows) {
+            const before = seenStatus.current[r.id];
+            if (before && before !== r.status && r.status === 'approved') {
+              const accountId = tracked.find((x) => x.id === r.id)?.accountId ?? r.subId;
+              void refreshAccount(accountId);
+              toast(`${t('approved')} ✓`);
+            }
+            seenStatus.current[r.id] = r.status;
+          }
+          setRenewals(rows);
+        })
         .catch(() => undefined);
     void load();
-    const id = setInterval(load, 60_000);
+    const id = setInterval(load, 30_000);
     return () => {
       stop = true;
       clearInterval(id);
@@ -135,7 +160,50 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
     return demo ? demoLookup(url) : publicApi.lookup(url, tenant);
   }
 
+  /** Background sync of one account: no spinner, no toast, keeps the last data on failure. */
+  async function refreshAccount(id: string | null) {
+    const target = stateRef.current.accounts.find((a) => a.id === id);
+    if (!target || syncing.current.has(target.id)) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    syncing.current.add(target.id);
+    if (target.id === stateRef.current.activeId) lastSync.current = Date.now();
+    try {
+      const res = await lookup(target.url);
+      const cur = stateRef.current;
+      persist({ ...upsertAccount(cur, target.url, res), activeId: cur.activeId });
+    } catch {
+      /* the manual refresh button reports errors */
+    } finally {
+      syncing.current.delete(target.id);
+    }
+  }
+
+  // Keep the numbers live: every 45s while the app is on screen, and right away
+  // when it comes back to the foreground or the connection returns.
+  useEffect(() => {
+    if (!ready) return;
+    const sync = (minAge: number) => () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastSync.current < minAge) return;
+      void refreshAccount(stateRef.current.activeId);
+    };
+    const tick = sync(40_000);
+    const wake = sync(15_000);
+    const id = setInterval(tick, 45_000);
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('online', wake);
+    window.addEventListener('focus', wake);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('online', wake);
+      window.removeEventListener('focus', wake);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
   async function refreshAll(s: AccountState) {
+    lastSync.current = Date.now();
     setRefreshing(true);
     let next = s;
     for (const a of s.accounts) {
@@ -153,6 +221,7 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
 
   async function refreshActive() {
     if (!active) return;
+    lastSync.current = Date.now();
     setRefreshing(true);
     try {
       const res = await lookup(active.url);
@@ -235,6 +304,20 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
     }
   }
 
+  // The status bar follows the theme the customer picked.
+  useEffect(() => {
+    document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', THEME_CANVAS[theme]));
+  }, [theme]);
+
+  function changeTheme(next: ThemeId) {
+    setTheme(next);
+    try {
+      localStorage.setItem(`nc.theme.${storeKey}`, next);
+    } catch {
+      /* ignore */
+    }
+  }
+
   function changeLocale(l: Locale) {
     setLocale(l);
     try {
@@ -244,7 +327,7 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
     }
   }
 
-  const ctx = { brand, tenant, locale, t, toast, preview: demo };
+  const ctx = { brand: shown, tenant, locale, t, toast, preview: demo };
   const canInstall = !standalone && (Boolean(installEvt) || isIosSafe());
   // Pending requests stay visible; decided ones show for three days.
   const accountRenewals = active
@@ -257,11 +340,11 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
 
   return (
     <SfContext.Provider value={ctx}>
-      <div data-theme={brand.theme} className="sf sf-root min-h-dvh" style={brandStyle(brand)} dir={isRtl(locale) ? 'rtl' : 'ltr'} lang={locale}>
+      <div data-theme={theme} className="sf sf-root min-h-dvh" style={brandStyle(brand)} dir={isRtl(locale) ? 'rtl' : 'ltr'} lang={locale}>
         {!ready ? (
           <div className="min-h-dvh" />
         ) : !active || adding ? (
-          <div className="mx-auto w-full max-w-[440px] sm:flex sm:min-h-dvh sm:max-w-[460px] sm:flex-col sm:justify-center sm:px-4">
+          <div className="mx-auto w-full max-w-[440px] tab:flex tab:min-h-dvh tab:max-w-[460px] tab:flex-col tab:justify-center tab:px-4 wide:max-w-[1080px] wide:px-8">
             <Onboarding
               busy={busy}
               error={error}
@@ -272,6 +355,7 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
             />
           </div>
         ) : (
+          <PullToRefresh onRefresh={refreshActive} refreshing={refreshing} disabled={sheet !== null}>
           <Dashboard
             account={active}
             accountCount={state.accounts.length}
@@ -289,6 +373,7 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
             }}
             onMenu={() => setSheet('menu')}
           />
+          </PullToRefresh>
         )}
 
         {active && (
@@ -341,6 +426,9 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
           onLocale={changeLocale}
           push={push}
           onPushToggle={togglePush}
+          theme={theme}
+          themes={themes}
+          onTheme={changeTheme}
         />
         <InstallIosSheet open={sheet === 'install'} onClose={() => setSheet(null)} />
 
@@ -351,7 +439,7 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
               initial={{ opacity: 0, y: -12 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -12 }}
-              className="fixed inset-x-0 top-[max(1rem,env(safe-area-inset-top))] z-[60] mx-auto w-fit max-w-[90vw] rounded-full bg-ink px-5 py-3 text-sm text-surface shadow-raise"
+              className="fixed inset-x-0 top-[max(1rem,env(safe-area-inset-top))] z-[60] mx-auto w-fit max-w-[90vw] rounded-full bg-ink px-5 py-3 text-sm text-on-ink shadow-raise"
             >
               {toastMsg}
             </motion.div>

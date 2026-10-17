@@ -1,4 +1,4 @@
-import { RenewalPlan, request } from '@/lib/api';
+import { RenewalPlan, ThemeId, request } from '@/lib/api';
 
 export type Role = 'SUPER_ADMIN' | 'ORG_ADMIN' | 'RESELLER' | 'USER';
 
@@ -12,7 +12,8 @@ export type AdminBrand = {
   iconUrl: string | null;
   primaryColor: string;
   accentColor: string;
-  theme: 'mist' | 'graphite' | 'sage';
+  theme: ThemeId;
+  themeChoices: ThemeId[];
   defaultLocale: string;
   supportUrl: string | null;
   supportTelegram: string | null;

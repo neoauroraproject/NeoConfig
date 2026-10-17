@@ -46,8 +46,9 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
   const [kickerA, kickerB] = splitKicker(brand.tagline || t('onboardKicker'));
 
   return (
-    <div className="relative flex min-h-dvh flex-col overflow-hidden bg-surface sm:my-8 sm:min-h-[min(720px,calc(100dvh-4rem))] sm:rounded-5xl sm:shadow-raise">
-      {graphite ? <DotField /> : <Aurora />}
+    <div className="relative overflow-hidden bg-surface tab:my-8 tab:rounded-5xl tab:shadow-raise wide:grid wide:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+      <div className="relative flex min-h-dvh flex-col tab:min-h-[min(720px,calc(100dvh-4rem))] wide:min-h-[min(660px,calc(100dvh-4rem))]">
+      {graphite ? <DotField /> : brand.theme === 'pearl' ? <PearlGlow /> : brand.theme === 'moss' ? null : <Aurora />}
 
       <header className="relative z-10 flex items-center justify-between px-7 pt-[max(1.75rem,env(safe-area-inset-top))]">
         <BrandMark brand={brand} size={36} />
@@ -69,7 +70,7 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
         )}
       </header>
 
-      <div className="relative z-10 mt-auto px-7 pb-7 sm:px-9 sm:pb-9">
+      <div className="relative z-10 mt-auto px-7 pb-7 tab:px-9 tab:pb-9">
         <motion.div
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
@@ -104,7 +105,7 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
                 placeholder="https://"
                 aria-describedby="sub-url-hint sub-url-error"
                 aria-invalid={Boolean(error)}
-                className="h-16 w-full rounded-4xl bg-surface-2 pe-4 ps-5 text-[15px] text-ink shadow-raise-sm outline-none placeholder:text-ink-3 focus:ring-2 focus:ring-[var(--brand)]"
+                className="h-16 w-full rounded-4xl bg-surface-2 pe-4 ps-5 text-base text-ink shadow-raise-sm outline-none placeholder:text-ink-3 focus:ring-2 focus:ring-[var(--brand)]"
                 style={canPaste && !url ? { paddingInlineEnd: '6.5rem' } : undefined}
               />
               {canPaste && !url && (
@@ -135,7 +136,66 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
           </p>
         </form>
       </div>
+      </div>
+      <Showcase />
     </div>
+  );
+}
+
+/** Desktop only: a glimpse of what the dashboard shows, so the wide card isn't half empty. */
+function Showcase() {
+  const { t, locale } = useSf();
+  return (
+    <div aria-hidden className="relative hidden p-4 wide:block">
+      <div className="sf-hero relative flex h-full flex-col justify-between overflow-hidden rounded-[2.25rem] bg-surface-2 p-8">
+        <div
+          className="pointer-events-none absolute -end-16 -top-20 h-72 w-72 rounded-full opacity-40"
+          style={{ background: 'radial-gradient(closest-side, var(--brand), transparent)' }}
+        />
+        <div className="relative">
+          <p className="flex items-center gap-2 text-[13px] text-ink-2">
+            <span className="h-2 w-2 rounded-full bg-[#1fa66a]" />
+            {t('onlineNow')}
+          </p>
+          <p className="mt-6 text-[13px] text-ink-2">{t('remaining')}</p>
+          <p dir="ltr" className="num mt-1 flex items-baseline gap-2 text-ink" style={{ justifyContent: locale === 'fa' ? 'flex-end' : 'flex-start' }}>
+            <span className="text-[4.25rem] font-light leading-tight">
+              31<span className="text-ink-3">.60</span>
+            </span>
+            <span className="text-lg text-ink-2">GB</span>
+          </p>
+        </div>
+        <div className="relative mt-8 grid grid-cols-2 gap-3">
+          <div className="flex min-h-[9.5rem] flex-col justify-end rounded-4xl p-5 shadow-raise" style={{ background: 'var(--hi)', color: 'var(--on-hi)' }}>
+            <p className="num text-[2.4rem] font-light leading-none">24</p>
+            <p className="mt-2 text-[13px] opacity-85">{t('daysLeft')}</p>
+          </div>
+          <div className="flex min-h-[9.5rem] flex-col rounded-4xl bg-surface p-5 shadow-raise">
+            <p className="text-[13px] text-ink-2">{t('dailyUsage')}</p>
+            <div className="mt-auto flex h-14 items-end gap-1" dir="ltr">
+              {[38, 62, 45, 80, 52, 70, 95].map((h, i) => (
+                <span key={i} className="flex-1 rounded-full" style={{ height: `${h}%`, background: i === 6 ? 'var(--signal)' : 'var(--ink)', opacity: i === 6 ? 1 : 0.8 }} />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Pearl: the sheen pooling at the top of the card. */
+function PearlGlow() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-x-0 top-0 h-[55%] opacity-90"
+      style={{
+        background: 'var(--pearl)',
+        maskImage: 'linear-gradient(to bottom, black 0%, transparent 100%)',
+        WebkitMaskImage: 'linear-gradient(to bottom, black 0%, transparent 100%)',
+      }}
+    />
   );
 }
 

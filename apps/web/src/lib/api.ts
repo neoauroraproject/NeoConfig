@@ -50,6 +50,9 @@ export type RenewalPlan = {
   mode: 'add' | 'reset';
 };
 
+export const THEME_IDS = ['mist', 'graphite', 'sage', 'moss', 'pearl'] as const;
+export type ThemeId = (typeof THEME_IDS)[number];
+
 export type Branding = {
   slug: string;
   appName: string;
@@ -59,7 +62,9 @@ export type Branding = {
   iconUrl: string | null;
   primaryColor: string;
   accentColor: string;
-  theme: 'mist' | 'graphite' | 'sage';
+  theme: ThemeId;
+  /** Themes the customer may pick from (default first). */
+  themes?: ThemeId[];
   defaultLocale: string;
   supportUrl: string | null;
   supportTelegram: string | null;

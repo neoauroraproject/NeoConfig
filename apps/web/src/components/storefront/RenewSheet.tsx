@@ -77,7 +77,16 @@ export function RenewSheet({
       onSubmitted(r);
       setStep('sent');
     } catch (err) {
-      setError(err instanceof ApiError && err.status === 0 ? t('err_network') : err instanceof Error ? err.message : t('err_generic'));
+      const msg = err instanceof Error ? err.message : '';
+      setError(
+        err instanceof ApiError && err.status === 0
+          ? t('err_network')
+          : /already used/i.test(msg)
+            ? t('err_receiptUsed')
+            : /waiting for review/i.test(msg)
+              ? t('err_tooManyPending')
+              : msg || t('err_generic'),
+      );
     } finally {
       setBusy(false);
     }
@@ -107,7 +116,7 @@ export function RenewSheet({
                   aria-checked={selected}
                   onClick={() => setPlanId(p.id)}
                   className={`flex w-full items-center gap-4 rounded-3xl p-4 text-start transition-colors ${
-                    selected ? 'bg-ink text-surface' : 'bg-surface-2 text-ink'
+                    selected ? 'bg-ink text-on-ink' : 'bg-surface-2 text-ink'
                   }`}
                 >
                   <span className="min-w-0 flex-1">
@@ -136,7 +145,7 @@ export function RenewSheet({
         <div>
           <p className="text-sm text-ink-2">{t('payTitle')}</p>
           {/* card */}
-          <div className="relative mt-3 overflow-hidden rounded-4xl bg-ink p-5 text-surface">
+          <div className="relative mt-3 overflow-hidden rounded-4xl bg-ink p-5 text-on-ink">
             <div
               aria-hidden
               className="absolute -end-10 -top-16 h-40 w-40 rounded-full opacity-40"
@@ -275,7 +284,7 @@ export function RenewSheet({
               <span className="text-sm font-medium text-brand">{t('enable')}</span>
             </button>
           )}
-          <button type="button" onClick={onClose} className="mt-4 h-14 w-full rounded-3xl bg-ink text-sm font-medium text-surface">
+          <button type="button" onClick={onClose} className="mt-4 h-14 w-full rounded-3xl bg-ink text-sm font-medium text-on-ink">
             {t('done')}
           </button>
         </div>

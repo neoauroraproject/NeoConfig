@@ -54,7 +54,7 @@ export function Dashboard(p: Props) {
   const canRenew = Boolean(brand.renewal);
 
   return (
-    <div className="relative mx-auto min-h-dvh w-full max-w-[440px] px-5 pb-36 pt-[max(1.5rem,env(safe-area-inset-top))]">
+    <div className="relative mx-auto min-h-dvh w-full max-w-[440px] px-5 pb-36 pt-[max(1.5rem,env(safe-area-inset-top))] wide:max-w-[1120px] wide:px-10 wide:pb-32 wide:pt-8">
       {/* header */}
       <header className="flex items-center justify-between">
         <BrandMark brand={brand} size={38} />
@@ -83,13 +83,16 @@ export function Dashboard(p: Props) {
         </div>
       </header>
 
+      {/* desktop: hero + actions on the left, figures on the right */}
+      <div className="wide:mt-8 wide:grid wide:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] wide:items-start wide:gap-6">
+      <div className="wide:sticky wide:top-8 wide:rounded-[2.5rem] wide:bg-surface wide:p-7 wide:shadow-raise">
       {/* hero */}
       <motion.section
         key={p.account.id}
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-        className="mt-9"
+        className="sf-hero mt-9 wide:mt-0"
       >
         <div className="flex items-center gap-2 text-[13px] text-ink-2">
           <span className="truncate font-medium text-ink">{name}</span>
@@ -146,9 +149,11 @@ export function Dashboard(p: Props) {
       </nav>
 
       {p.renewals.length > 0 && <RenewalStrip renewals={p.renewals} />}
+      </div>
 
+      <div>
       {/* tiles */}
-      <div className="mt-6 grid grid-cols-2 gap-3">
+      <div className="mt-6 grid grid-cols-2 gap-3 wide:mt-0">
         <DaysTile expiryAt={s.expiryAt} kind={s.expiryKind} />
         <QuotaTile />
       </div>
@@ -178,11 +183,13 @@ export function Dashboard(p: Props) {
           {locale === 'fa' ? <ChevronLeft className="h-4 w-4 text-ink-3" /> : <ChevronRight className="h-4 w-4 text-ink-3" />}
         </button>
       </section>
+      </div>
+      </div>
 
       {/* bottom nav */}
       <div className="fixed inset-x-0 bottom-0 z-40 mx-auto flex max-w-[440px] items-center gap-3 px-5 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div className="flex h-[4.5rem] flex-1 items-center gap-1 rounded-full bg-nav p-1.5 shadow-raise">
-          <span className="inline-flex h-full items-center gap-2 rounded-full bg-surface px-5 text-sm font-medium text-ink">
+          <span className="sf-pill inline-flex h-full items-center gap-2 rounded-full px-5 text-sm font-medium">
             <Home className="h-5 w-5" strokeWidth={1.6} />
             {t('home')}
           </span>
@@ -225,7 +232,7 @@ export function Dashboard(p: Props) {
     }
     return (
       <p dir="ltr" className="num mt-1 flex items-baseline gap-2 text-ink" style={{ justifyContent: locale === 'fa' ? 'flex-end' : 'flex-start' }}>
-        <span className="text-[3.4rem] font-light leading-tight">
+        <span className="text-[3.4rem] font-light leading-tight wide:text-[4.5rem]">
           {parts.int}
           <span className="text-ink-3">{parts.dec}</span>
         </span>
@@ -239,7 +246,7 @@ export function Dashboard(p: Props) {
     const ticks = 18;
     const filled = frac === null ? 0 : Math.round(frac * ticks);
     return (
-      <div className="flex min-h-[11.5rem] flex-col rounded-4xl bg-surface p-5 shadow-raise">
+      <div className="flex min-h-[11.5rem] flex-col rounded-4xl bg-surface p-5 shadow-raise wide:min-h-[13rem]">
         <p className="text-[13px] text-ink-2">{t('used')}</p>
         <p className="num mt-2 text-xl font-normal leading-tight text-ink" dir="ltr" style={{ textAlign: locale === 'fa' ? 'right' : 'left' }}>
           {formatBytes(s.totalUsedBytes)}
@@ -282,7 +289,7 @@ export function Dashboard(p: Props) {
             </p>
           )}
         </div>
-        <div className="mt-5 flex h-24 items-end gap-[6px]" dir="ltr" role="img" aria-label={t('dailyUsage')}>
+        <div className="mt-5 flex h-24 items-end gap-[6px] wide:h-36" dir="ltr" role="img" aria-label={t('dailyUsage')}>
           {days.map((d, i) => {
             const isToday = i === days.length - 1;
             const h = hasData ? Math.max(12, ((d.bytes ?? 0) / max) * 100) : 14 + ((i * 37) % 50);
@@ -346,7 +353,7 @@ function DaysTile({ expiryAt, kind }: { expiryAt: string | null; kind: string })
   const [fx, fy] = pt(a);
 
   return (
-    <div className="relative flex min-h-[11.5rem] flex-col overflow-hidden rounded-4xl bg-brand p-5 text-[var(--on-brand)] shadow-raise">
+    <div className="relative flex min-h-[11.5rem] flex-col overflow-hidden rounded-4xl p-5 shadow-raise wide:min-h-[13rem]" style={{ background: 'var(--hi)', color: 'var(--on-hi)' }}>
       <svg viewBox="0 0 120 120" className="absolute end-2 top-2 h-24 w-24" aria-hidden>
         <path d={`M ${sx} ${sy} A ${r} ${r} 0 1 1 ${ex} ${ey}`} fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2" />
         {frac > 0 && (
@@ -378,8 +385,8 @@ function RoundAction({
   return (
     <button type="button" onClick={onClick} disabled={disabled} className="group flex flex-col items-center gap-2 disabled:opacity-60">
       <span
-        className={`grid h-16 w-16 place-items-center rounded-full shadow-raise-sm transition-transform group-active:scale-95 ${
-          highlight ? 'bg-ink text-surface' : 'bg-surface text-ink'
+        className={`grid h-16 w-16 place-items-center rounded-full shadow-raise-sm ${
+          highlight ? 'bg-ink text-on-ink' : 'bg-surface text-ink'
         }`}
       >
         {children}

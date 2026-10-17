@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { decryptSecret } from '../common/crypto/secret.crypto';
+import { HELP_TEXT, Markup, RenewalNotice, decisionLine, esc, receiptCaption, reviewKeyboard } from './review';
 
 export interface TelegramTarget {
   appName: string;
@@ -8,27 +9,8 @@ export interface TelegramTarget {
   telegramChatId: string | null;
 }
 
-export interface RenewalNotice {
-  id: string;
-  displayName: string | null;
-  subId: string;
-  planTitle: string;
-  price: string;
-  days: number;
-  gb: number;
-  users?: number;
-  mode?: string;
-  payerName: string | null;
-  payerNote: string | null;
-}
-
-type Markup = { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> };
-
-/** callback_data for the inline buttons: nc:a:<renewalId> / nc:r:<renewalId> */
-export function parseCallback(data: string | undefined): { approve: boolean; id: string } | null {
-  const m = /^nc:([ar]):([a-z0-9]{10,40})$/.exec(data || '');
-  return m ? { approve: m[1] === 'a', id: m[2] } : null;
-}
+export type { CallbackAction, RenewalNotice, ReviewInfo } from './review';
+export { decisionLine, esc, parseCallback } from './review';
 
 /**
  * The sales team's Telegram channel for renewals: each receipt arrives with
@@ -47,31 +29,12 @@ export class TelegramService {
   }
 
   receiptCaption(t: TelegramTarget, r: RenewalNotice) {
-    const users = r.users ? ` · ${r.users === 1 ? 'تک‌کاربره' : `${r.users} کاربره`}` : '';
-    const volume = r.mode === 'reset' ? (r.gb > 0 ? `${r.gb} گیگ (صفر شدن مصرف)` : 'نامحدود') : r.gb > 0 ? `+${r.gb} گیگ` : 'بدون حجم اضافه';
-    return [
-      `🧾 <b>رسید تمدید جدید</b> · ${esc(t.appName)}`,
-      '',
-      `👤 ${esc(r.displayName || r.subId)}`,
-      `📦 ${esc(r.planTitle)} — ${esc(r.price)}`,
-      `⏱ ${r.days > 0 ? `+${r.days} روز` : 'بدون تغییر زمان'} · ${volume}${users}`,
-      r.payerName ? `💳 واریزکننده: ${esc(r.payerName)}` : null,
-      r.payerNote ? `📝 ${esc(r.payerNote)}` : null,
-    ]
-      .filter((l) => l !== null)
-      .join('\n');
+    return receiptCaption(t.appName, r);
   }
 
   async renewalReceived(t: TelegramTarget, r: RenewalNotice, receipt?: { mime: string; data: Buffer }) {
     const text = this.receiptCaption(t, r);
-    const markup: Markup = {
-      inline_keyboard: [
-        [
-          { text: '✅ تأیید و تمدید', callback_data: `nc:a:${r.id}` },
-          { text: '❌ رد', callback_data: `nc:r:${r.id}` },
-        ],
-      ],
-    };
+    const markup = reviewKeyboard(r.id, { manual: r.review?.canApply === false });
     if (receipt) return this.sendPhoto(t, text, receipt, markup);
     return this.sendMessage(t, text, false, markup);
   }
@@ -102,13 +65,40 @@ export class TelegramService {
     const res = await this.api(t, 'setWebhook', {
       url: `${app}/api/v1/telegram/webhook/${t.id}`,
       secret_token: t.telegramWebhookSecret,
-      allowed_updates: ['callback_query'],
+      allowed_updates: ['callback_query', 'message'],
     });
+    if (res.ok) {
+      await this.api(t, 'setMyCommands', {
+        commands: [
+          { command: 'pending', description: 'درخواست‌های در انتظار' },
+          { command: 'stats', description: 'آمار تمدید' },
+          { command: 'help', description: 'راهنما' },
+        ],
+      });
+    }
     return res.ok ? { ok: true, message: 'Buttons active' } : { ok: false, message: res.error };
   }
 
-  async answerCallback(t: TelegramTarget, callbackId: string, text: string) {
-    await this.api(t, 'answerCallbackQuery', { callback_query_id: callbackId, text: text.slice(0, 190) });
+  async answerCallback(t: TelegramTarget, callbackId: string, text: string, alert = false) {
+    await this.api(t, 'answerCallbackQuery', { callback_query_id: callbackId, text: text.slice(0, 190), show_alert: alert });
+  }
+
+  /** Reply in the team chat (commands). */
+  async say(t: TelegramTarget, text: string) {
+    return this.sendMessage(t, text);
+  }
+
+  help(t: TelegramTarget) {
+    return this.sendMessage(t, HELP_TEXT);
+  }
+
+  /** The panel refused the renewal: swap in "approve, I'll renew by hand" so the request isn't stuck. */
+  async offerManual(t: TelegramTarget, message: { chatId: number | string; messageId: number }, id: string) {
+    await this.api(t, 'editMessageReplyMarkup', {
+      chat_id: message.chatId,
+      message_id: message.messageId,
+      reply_markup: reviewKeyboard(id, { manual: true }),
+    });
   }
 
   /** Replace the buttons with the outcome on the original receipt message. */
@@ -172,14 +162,4 @@ export class TelegramService {
       return { ok: false, error: msg };
     }
   }
-}
-
-export function decisionLine(d: { approved: boolean; by: string; appliedOnPanel: boolean | null }) {
-  if (!d.approved) return `❌ <b>رد شد</b> توسط ${esc(d.by)}`;
-  const applied = d.appliedOnPanel === null ? '' : d.appliedOnPanel ? ' — روی پنل اعمال شد' : ' — روی پنل اعمال نشد، دستی تمدید کنید';
-  return `✅ <b>تأیید شد</b> توسط ${esc(d.by)}${applied}`;
-}
-
-export function esc(s: string) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

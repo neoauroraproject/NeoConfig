@@ -52,7 +52,7 @@ export function Sheet({ open, onClose, title, children, closeLabel }: Props) {
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center" role="presentation">
+        <div className="fixed inset-0 z-50 flex items-end justify-center wide:items-center wide:p-6" role="presentation">
           <motion.div
             className="absolute inset-0 bg-black/40"
             initial={{ opacity: 0 }}
@@ -66,7 +66,7 @@ export function Sheet({ open, onClose, title, children, closeLabel }: Props) {
             role="dialog"
             aria-modal="true"
             aria-label={title}
-            className="relative max-h-[88dvh] w-full max-w-[440px] overflow-y-auto rounded-t-5xl bg-surface px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-3 text-ink shadow-raise"
+            className="relative max-h-[88dvh] w-full max-w-[440px] overflow-y-auto overscroll-contain rounded-t-5xl bg-[var(--sheet)] px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-3 text-ink shadow-raise wide:max-w-[480px] wide:rounded-5xl wide:pb-6"
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}

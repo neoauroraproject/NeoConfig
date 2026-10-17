@@ -1,9 +1,11 @@
 'use client';
 
-import { Bell, BellOff, Check, Globe, LifeBuoy, Pencil, Plus, Share, Trash2 } from 'lucide-react';
+import { Bell, BellOff, Check, Globe, LifeBuoy, Palette, Pencil, Plus, Share, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import type { SavedAccount } from '@/lib/accounts';
+import type { ThemeId } from '@/lib/api';
+import { THEME_SWATCH } from '@/lib/themes';
 import { formatBytes } from '@/lib/format';
 import type { Locale } from '@/lib/i18n';
 import type { PushState } from '@/lib/push';
@@ -69,7 +71,7 @@ export function AccountsSheet({
                     maxLength={40}
                     className="h-11 flex-1 rounded-2xl bg-surface px-3 text-sm text-ink outline-none ring-1 ring-line focus:ring-2 focus:ring-[var(--brand)]"
                   />
-                  <button type="submit" className="h-11 rounded-2xl bg-ink px-4 text-sm text-surface">
+                  <button type="submit" className="h-11 rounded-2xl bg-ink px-4 text-sm text-on-ink">
                     {t('save')}
                   </button>
                 </form>
@@ -157,6 +159,9 @@ export function MenuSheet({
   onLocale,
   push,
   onPushToggle,
+  theme,
+  themes,
+  onTheme,
 }: {
   open: boolean;
   onClose: () => void;
@@ -164,6 +169,9 @@ export function MenuSheet({
   onLocale: (l: Locale) => void;
   push: PushState;
   onPushToggle: () => void;
+  theme: ThemeId;
+  themes: ThemeId[];
+  onTheme: (t: ThemeId) => void;
 }) {
   const { t, brand } = useSf();
   const support = brand.supportTelegram
@@ -214,13 +222,46 @@ export function MenuSheet({
                 type="button"
                 onClick={() => onLocale(l)}
                 aria-pressed={locale === l}
-                className={`h-9 rounded-full px-3.5 text-sm ${locale === l ? 'bg-ink text-surface' : 'text-ink-2'}`}
+                className={`h-9 rounded-full px-3.5 text-sm ${locale === l ? 'bg-ink text-on-ink' : 'text-ink-2'}`}
               >
                 {l === 'fa' ? 'فارسی' : 'English'}
               </button>
             ))}
           </div>
         </div>
+
+        {themes.length > 1 && (
+          <div className="rounded-3xl bg-surface-2 p-4">
+            <p className="mb-3 flex items-center gap-3 text-sm font-medium text-ink">
+              <span className="grid h-10 w-10 place-items-center rounded-full bg-surface text-ink-2">
+                <Palette className="h-4 w-4" />
+              </span>
+              {t('theme')}
+            </p>
+            <div className="grid grid-cols-3 gap-2 tab:grid-cols-5" role="radiogroup" aria-label={t('theme')}>
+              {themes.map((id) => {
+                const sw = THEME_SWATCH[id];
+                const on = id === theme;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    onClick={() => onTheme(id)}
+                    className={`press rounded-2xl p-1 text-center ${on ? 'ring-2 ring-[var(--ink)]' : ''}`}
+                  >
+                    <span className="relative flex h-14 items-end gap-1 overflow-hidden rounded-xl p-1.5" style={{ background: sw.canvas }}>
+                      <span className="h-8 flex-1 rounded-md" style={{ background: sw.card, boxShadow: '0 0 0 1px rgba(127,127,127,.18) inset' }} />
+                      <span className="h-5 w-5 rounded-md" style={{ background: sw.hi }} />
+                    </span>
+                    <span className="mt-1 block text-[11px] text-ink-2">{locale === 'fa' ? sw.fa : sw.en}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {support && (
           <a href={support} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-3xl bg-surface-2 p-4">
@@ -265,7 +306,7 @@ export function InstallIosSheet({ open, onClose }: { open: boolean; onClose: () 
         </span>
         <p className="text-sm leading-7 text-ink">{t('installIosSteps')}</p>
       </div>
-      <button type="button" onClick={onClose} className="mt-4 h-14 w-full rounded-3xl bg-ink text-sm font-medium text-surface">
+      <button type="button" onClick={onClose} className="mt-4 h-14 w-full rounded-3xl bg-ink text-sm font-medium text-on-ink">
         {t('done')}
       </button>
     </Sheet>

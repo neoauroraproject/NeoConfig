@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import type { Branding } from './api';
+import { THEME_CANVAS } from './themes';
 
 const INTERNAL = process.env.API_INTERNAL_URL || 'http://localhost:4000';
 
@@ -34,11 +35,7 @@ export async function fetchBrand(tenant: string): Promise<Branding> {
   }
 }
 
-export const THEME_CANVAS: Record<Branding['theme'], string> = {
-  mist: '#e8e9f0',
-  graphite: '#1a1b1f',
-  sage: '#8e978f',
-};
+export { THEME_CANVAS };
 
 export function brandMetadata(brand: Branding, tenant: string): Metadata {
   const q = encodeURIComponent(tenant);
@@ -60,5 +57,7 @@ export function brandViewport(brand: Branding): Viewport {
     width: 'device-width',
     initialScale: 1,
     viewportFit: 'cover',
+    // Android: the keyboard shrinks the layout like on iOS, so bottom-pinned UI stays visible.
+    interactiveWidget: 'resizes-content',
   };
 }

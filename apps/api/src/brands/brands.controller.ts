@@ -42,6 +42,7 @@ class BrandDto {
   @IsOptional() @IsString() primaryColor?: string;
   @IsOptional() @IsString() accentColor?: string;
   @IsOptional() @IsString() theme?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) themeChoices?: string[];
   @IsOptional() @IsString() defaultLocale?: string;
   @IsOptional() @IsString() supportUrl?: string | null;
   @IsOptional() @IsString() supportTelegram?: string | null;

@@ -116,8 +116,10 @@ model Brand {
   iconUrl         String?
   primaryColor    String  @default("#4F5BD5")
   accentColor     String  @default("#FF6A1A")
-  /// mist | graphite | sage
+  /// mist | graphite | sage | moss | pearl
   theme           String  @default("mist")
+  /// Extra themes the customer may switch to in the app menu
+  themeChoices    String[] @default([])
   defaultLocale   String  @default("fa")
   supportUrl      String?
   supportTelegram String?
@@ -329,6 +331,8 @@ model RenewalRequest {
   payerNote      String?
   receiptMime    String
   receiptData    Bytes
+  /// sha256 of the image, to catch the same receipt sent twice
+  receiptHash    String?
   status         RenewalStatus @default(PENDING)
   adminNote      String?
   appliedOnPanel Boolean?
@@ -343,6 +347,7 @@ model RenewalRequest {
 
   @@index([brandId, status, createdAt])
   @@index([subId])
+  @@index([brandId, receiptHash])
 }
 
 model PushDevice {

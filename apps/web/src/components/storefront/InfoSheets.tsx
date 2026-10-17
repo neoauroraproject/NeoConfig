@@ -36,7 +36,7 @@ export function AppsSheet({ open, onClose, account }: { open: boolean; onClose: 
             role="tab"
             aria-selected={platform === pf}
             onClick={() => setPlatform(pf)}
-            className={`h-10 shrink-0 rounded-full px-4 text-sm ${platform === pf ? 'bg-ink text-surface' : 'bg-surface-2 text-ink-2'}`}
+            className={`h-10 shrink-0 rounded-full px-4 text-sm ${platform === pf ? 'bg-ink text-on-ink' : 'bg-surface-2 text-ink-2'}`}
           >
             {PLATFORM_LABEL[pf]}
           </button>
@@ -66,7 +66,7 @@ export function AppsSheet({ open, onClose, account }: { open: boolean; onClose: 
                 {t('addInApp')}
               </a>
             ) : (
-              <button type="button" onClick={copy} className="inline-flex h-10 items-center rounded-full bg-ink px-4 text-sm font-medium text-surface">
+              <button type="button" onClick={copy} className="inline-flex h-10 items-center rounded-full bg-ink px-4 text-sm font-medium text-on-ink">
                 {t('copyLink')}
               </button>
             )}

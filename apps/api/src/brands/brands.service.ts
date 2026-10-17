@@ -32,7 +32,13 @@ export interface RenewalPlan {
 /** Plans as they arrive from the admin form (new fields may be missing). */
 export type PlanInput = Omit<RenewalPlan, 'users' | 'mode'> & { users?: number; mode?: string };
 
-export const THEMES = ['mist', 'graphite', 'sage'] as const;
+export const THEMES = ['mist', 'graphite', 'sage', 'moss', 'pearl'] as const;
+
+/** Themes the customer can switch between: the brand's default first, then the extra choices. */
+export function themeList(theme: string, choices: string[] | null | undefined): string[] {
+  const valid = (t: string) => THEMES.includes(t as never);
+  return [...new Set([valid(theme) ? theme : 'mist', ...(choices ?? []).filter(valid)])];
+}
 
 const EDITABLE = [
   'appName', 'shortName', 'tagline', 'logoUrl', 'iconUrl', 'primaryColor', 'accentColor',
@@ -48,6 +54,7 @@ export type BrandInput = Partial<Record<(typeof EDITABLE)[number], string | bool
   ownerId?: string | null;
   plans?: PlanInput[];
   panelIds?: string[];
+  themeChoices?: string[];
   /** Write-only. Empty string clears it. */
   telegramBotToken?: string;
 };
@@ -90,7 +97,8 @@ export class BrandsService {
   }
 
   toPublic(b: Brand | null) {
-    const plans = b ? parsePlans(b.plansJson) : [];
+    // Plans without a price are drafts: kept in the admin, hidden from customers.
+    const plans = b ? parsePlans(b.plansJson).filter((p) => p.price.trim()) : [];
     const renewal = b?.renewalEnabled && b.cardNumber && plans.length
       ? {
           cardNumber: b.cardNumber,
@@ -110,6 +118,7 @@ export class BrandsService {
       primaryColor: b?.primaryColor ?? '#4F5BD5',
       accentColor: b?.accentColor ?? '#FF6A1A',
       theme: b?.theme ?? 'mist',
+      themes: themeList(b?.theme ?? 'mist', b?.themeChoices),
       defaultLocale: b?.defaultLocale ?? 'fa',
       supportUrl: b?.supportUrl ?? null,
       supportTelegram: b?.supportTelegram ?? null,
@@ -187,6 +196,7 @@ export class BrandsService {
     const data: Prisma.BrandUncheckedUpdateInput = { ...this.editable(input) };
 
     if (input.plans) data.plansJson = JSON.stringify(cleanPlans(input.plans));
+    if (input.themeChoices) data.themeChoices = themeList('mist', input.themeChoices).filter((t) => input.themeChoices!.includes(t));
     if (admin) {
       if (input.slug !== undefined) {
         const slug = cleanSlug(input.slug);
@@ -439,6 +449,7 @@ export class BrandsService {
       primaryColor: r.primaryColor,
       accentColor: r.accentColor,
       theme: r.theme,
+      themeChoices: r.themeChoices,
       defaultLocale: r.defaultLocale,
       supportUrl: r.supportUrl,
       supportTelegram: r.supportTelegram,

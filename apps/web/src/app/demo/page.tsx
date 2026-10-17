@@ -1,6 +1,6 @@
 import { Storefront } from '@/components/storefront/Storefront';
 import { brandViewport, fetchBrand } from '@/lib/brand-server';
-import type { Branding } from '@/lib/api';
+import { THEME_IDS, type Branding, type ThemeId } from '@/lib/api';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +19,8 @@ export default async function DemoPage({ searchParams }: Props) {
   const brand = await fetchBrand(b || 'default');
   const themed: Branding = {
     ...brand,
-    theme: theme === 'graphite' || theme === 'sage' || theme === 'mist' ? theme : brand.theme,
+    theme: THEME_IDS.includes(theme as ThemeId) ? (theme as ThemeId) : brand.theme,
+    themes: [...THEME_IDS],
     renewal: brand.renewal ?? {
       cardNumber: '6037991234567890',
       cardHolder: 'نمونه',

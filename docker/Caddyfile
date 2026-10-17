@@ -1,5 +1,11 @@
 {
 	email {$ACME_EMAIL}
+	# HTTP/1.1 + HTTP/2 over TCP only. HTTP/3 (QUIC/UDP) is silently dropped on
+	# many networks (Iranian ISPs especially); browsers then hang until timeout
+	# after the first visit advertised h3.
+	servers {
+		protocols h1 h2
+	}
 	# Brand domains get certificates on their first visit, but only after the
 	# API confirms the domain belongs to a brand.
 	on_demand_tls {

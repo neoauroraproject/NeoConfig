@@ -120,7 +120,7 @@ prune_releases() {
 install_packages() {
   command -v apt-get >/dev/null || die "This installer supports Ubuntu and Debian (apt)."
   info "Installing nginx, PostgreSQL and tools…"
-  export DEBIAN_FRONTEND=noninteractive
+  export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1
   apt-get update -qq
   apt-get install -y -qq nginx postgresql postgresql-client curl ca-certificates openssl tar xz-utils cron socat iproute2 >/dev/null
   systemctl enable --now postgresql nginx cron >/dev/null 2>&1 || true
@@ -315,55 +315,79 @@ nginx_reload() {
   systemctl reload nginx 2>/dev/null || systemctl restart nginx
 }
 
+step() { echo -e "   ${DIM}… $*${NC}" >&2; }
+reachable() { curl -fsS -o /dev/null --connect-timeout 8 --max-time 15 "$1" 2>/dev/null; }
+
+# Prints a reason on stdout and returns 1 on failure (never blocks for long).
 install_acme() {
   [[ -x "$ACME" ]] && return 0
-  info "Installing acme.sh (Let's Encrypt client)…"
-  local email; email=$(env_get ACME_EMAIL); email=${email:-admin@example.com}
-  if ! curl -fsSL https://get.acme.sh | sh -s email="$email" >/dev/null 2>&1; then
-    local tmp; tmp=$(mktemp -d)
-    curl -fsSL https://github.com/acmesh-official/acme.sh/archive/master.tar.gz | tar -xz -C "$tmp"
-    (cd "$tmp"/acme.sh-master && ./acme.sh --install --accountemail "$email" >/dev/null)
-    rm -rf "$tmp"
+  step "installing acme.sh"
+  local email tmp
+  email=$(env_get ACME_EMAIL); email=${email:-admin@example.com}
+  tmp=$(mktemp -d)
+  if ! curl -fsSL --connect-timeout 10 --max-time 120 -o "$tmp/acme.tar.gz" \
+      https://github.com/acmesh-official/acme.sh/archive/refs/heads/master.tar.gz; then
+    rm -rf "$tmp"; echo "Could not download acme.sh from GitHub"; return 1
   fi
-  [[ -x "$ACME" ]] || die "acme.sh could not be installed"
-  "$ACME" --set-default-ca --server letsencrypt >/dev/null
-  ok "acme.sh installed (renews automatically via cron)"
+  tar -xzf "$tmp/acme.tar.gz" -C "$tmp"
+  (cd "$tmp"/acme.sh-master && timeout 120 ./acme.sh --install --home /root/.acme.sh --accountemail "$email" >/dev/null 2>&1) || true
+  rm -rf "$tmp"
+  [[ -x "$ACME" ]] || { echo "acme.sh could not be installed"; return 1; }
 }
 
 cert_expiry() { openssl x509 -enddate -noout -in "$SSL_DIR/$1/fullchain.pem" 2>/dev/null | cut -d= -f2; }
 
 # ssl_issue <domain> → 0 on success; prints a one-line result either way
 ssl_issue() {
-  local d=$1 ip resolved log rc
+  local d=$1 ip resolved log rc reason="" email m ca
+  local -a cas=()
   is_domain "$d" || { echo "Invalid domain name"; return 1; }
+  step "checking DNS"
   ip=$(public_ip); resolved=$(resolve4 "$d")
   if [[ -z "$resolved" ]]; then echo "DNS: $d has no A record (point it to $ip)"; return 1; fi
   if [[ " $resolved " != *" $ip "* ]]; then
     echo "DNS: $d points to $resolved, not this server ($ip). Behind Cloudflare? Switch the record to DNS only."
     return 1
   fi
-  install_acme >/dev/null
+  if ! m=$(install_acme); then echo "$m"; return 1; fi
   write_proxy_snippet
   if [[ ! -f "$SSL_DIR/$d/fullchain.pem" ]]; then
     vhost_http "$d"
     nginx_reload >/dev/null || { echo "nginx configuration test failed"; return 1; }
   fi
 
+  # Use whichever certificate authority this server can actually reach.
+  step "checking which certificate authorities are reachable"
+  reachable https://acme-v02.api.letsencrypt.org/directory && cas+=(letsencrypt)
+  reachable https://acme.zerossl.com/v2/DV90 && cas+=(zerossl)
+  if [[ ${#cas[@]} -eq 0 ]]; then
+    echo "This server cannot reach Let's Encrypt or ZeroSSL (outbound HTTPS to them is blocked)"; return 1
+  fi
+  email=$(env_get ACME_EMAIL); email=${email:-admin@example.com}
   log=$(mktemp)
-  set +e
-  "$ACME" --issue -d "$d" -w "$WEBROOT" --server letsencrypt --keylength ec-256 >"$log" 2>&1
-  rc=$?
-  set -e
-  if [[ $rc -ne 0 && $rc -ne 2 ]]; then   # 2 = still valid, nothing to renew
-    local reason
-    reason=$(grep -E "Verify error|Invalid response|Connection refused|Timeout|error|Error" "$log" | tail -n1 | sed 's/^.*\] //' | cut -c1-220)
-    rm -f "$log"
-    echo "Let's Encrypt could not verify $d${reason:+: $reason}. Port 80 must be reachable from the internet."
+  rc=1
+  for ca in "${cas[@]}"; do
+    step "requesting a certificate from $ca (up to 5 minutes)"
+    if [[ $ca == zerossl ]]; then
+      timeout 90 "$ACME" --register-account -m "$email" --server zerossl >/dev/null 2>&1 || true
+    fi
+    set +e
+    timeout 300 "$ACME" --issue -d "$d" -w "$WEBROOT" --server "$ca" --keylength ec-256 >"$log" 2>&1
+    rc=$?
+    set -e
+    [[ $rc -eq 0 || $rc -eq 2 ]] && break   # 2 = already valid
+    if [[ $rc -eq 124 ]]; then reason="$ca timed out"
+    else reason="$ca: $(grep -vE "Please add '--debug'|See: https|wiki|^\s*$" "$log" | tail -n1 | sed -e 's/\[[0-9;]*m//g' -e 's/^\[[^]]*\] //' | cut -c1-200)"; fi
+    step "$reason"
+  done
+  rm -f "$log"
+  if [[ $rc -ne 0 && $rc -ne 2 ]]; then
+    echo "Could not get a certificate for $d ($reason). Port 80 must be reachable from the internet."
     return 1
   fi
-  rm -f "$log"
+  step "installing the certificate"
   mkdir -p "$SSL_DIR/$d"
-  if ! "$ACME" --install-cert -d "$d" --ecc \
+  if ! timeout 60 "$ACME" --install-cert -d "$d" --ecc \
       --key-file "$SSL_DIR/$d/key.pem" \
       --fullchain-file "$SSL_DIR/$d/fullchain.pem" \
       --reloadcmd "systemctl reload nginx" >/dev/null 2>&1; then

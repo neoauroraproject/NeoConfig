@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, ExternalLink, Globe, Plus, RefreshCw, Send, Trash2 } from 'lucide-react';
+import { ArrowRight, ExternalLink, Globe, Plus, RefreshCw, Send, ShieldCheck, Trash2 } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import type { Branding, RenewalPlan } from '@/lib/api';
 import { relativeTime } from '@/lib/format';
@@ -441,7 +441,7 @@ function DomainsTab({
       <Card>
         <h2 className="font-medium">دامنه‌های اختصاصی</h2>
         <p className="mt-1 text-sm leading-7 text-[var(--ink-2)]">
-          رکورد A دامنه را به IP همین سرور بزن، دامنه را اینجا اضافه کن. گواهی SSL در اولین بازدید به‌طور خودکار صادر می‌شود.
+          رکورد A دامنه را به IP همین سرور بزن و دامنه را اینجا اضافه کن. گواهی SSL از Let's Encrypt خودکار گرفته می‌شود (حدود یک دقیقه بعد از درست شدن DNS)؛ وضعیتش را با «بررسی» ببین.
         </p>
         <form
           className="mt-4 flex gap-2"
@@ -472,8 +472,13 @@ function DomainsTab({
                 </p>
               </div>
               <Button variant="secondary" busy={busy === d.id} onClick={() => run(d.id, () => adminApi.checkDomain(brand.id, d.id))}>
-                <RefreshCw className="h-4 w-4" /> بررسی DNS و SSL
+                <RefreshCw className="h-4 w-4" /> بررسی
               </Button>
+              {d.dnsOk && !d.sslOk && (
+                <Button variant="secondary" busy={busy === `ssl-${d.id}`} onClick={() => run(`ssl-${d.id}`, () => adminApi.issueSsl(brand.id, d.id))}>
+                  <ShieldCheck className="h-4 w-4" /> صدور گواهی
+                </Button>
+              )}
               <Button variant="ghost" aria-label={`حذف ${d.domain}`} className="!px-3" onClick={() => run(`rm-${d.id}`, () => adminApi.removeDomain(brand.id, d.id))}>
                 <Trash2 className="h-4 w-4" />
               </Button>

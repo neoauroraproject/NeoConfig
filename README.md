@@ -60,41 +60,45 @@
 
 ## نصب روی سرور (یک خط)
 
-روی یک سرور لینوکس، با کاربر root:
+روی **Ubuntu 22.04 / 24.04** یا **Debian 12**، با کاربر root:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/neoauroraproject/NeoConfig/main/install.sh)
 ```
 
-نصب‌کننده Docker را (اگر نباشد) نصب می‌کند، دامنهٔ اصلی، ایمیل SSL و ایمیل/رمز مدیر را می‌پرسد، کلیدهای امنیتی تصادفی می‌سازد، برنامه را در `/opt/neoconfig` بالا می‌آورد و فرمان `neoconfig` را نصب می‌کند. قبل از اجرا، رکورد A دامنه را به IP سرور بزنید.
+- بدون Docker و بدون کامپایل روی سرور: نسخهٔ آماده (Node + API + وب، حدود ۷۰ مگابایت) از GitHub Releases دانلود می‌شود.
+- API و وب سرویس‌های systemd هستند، دیتابیس PostgreSQL روی خود سرور، و nginx جلوی آن‌ها.
+- گواهی Let's Encrypt دامنهٔ اصلی همان موقع نصب با **acme.sh** گرفته می‌شود و خودکار تمدید می‌شود. اگر نشد، دلیلش همان‌جا نوشته می‌شود و سایت روی HTTP بالا می‌ماند.
+- نصب قبلی Docker (اگر باشد) خودکار منتقل می‌شود: دیتابیس، کلیدهای رمزنگاری و تنظیمات.
 
-**سریع:** ایمیج‌های `api` و `web` در GitHub Actions ساخته و روی GHCR منتشر می‌شوند (`ghcr.io/neoauroraproject/neoconfig-api` و `neoconfig-web`، برای amd64 و arm64). سرور فقط آن‌ها را دانلود می‌کند؛ نصب و `neoconfig update` حدود یک دقیقه طول می‌کشد. اگر سرور به ghcr.io دسترسی نداشته باشد، نصب‌کننده خودکار روی خود سرور build می‌کند.
-
-- نسخهٔ مشخص: در `.env` بنویسید `NEOCONFIG_TAG=1.2.0` (یا `sha-abc1234`)؛ پیش‌فرض `latest`.
-- build محلی: `docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`
+قبل از نصب، رکورد A دامنه را به IP سرور بزنید (در Cloudflare حالت DNS only).
 
 ### منوی مدیریت `neoconfig`
 
-```bash
-neoconfig
-```
-
 | گزینه | کار |
 |---|---|
-| Status | وضعیت سرویس‌ها و سلامت API |
-| Logs | لاگ زنده (api / web / proxy / db) |
-| Restart | راه‌اندازی دوباره |
-| Update | پشتیبان‌گیری خودکار، دانلود ایمیج‌های جدید و اجرای مایگریشن‌ها |
-| Change admin password | تغییر رمز (و در صورت نیاز ایمیل) مدیر؛ همهٔ نشست‌ها خارج می‌شوند |
-| Change main domain | تغییر دامنهٔ اصلی؛ گواهی در اولین بازدید صادر می‌شود |
-| Back up database | پشتیبان فشرده در `/opt/neoconfig/backups` (۱۰ نسخهٔ آخر) |
-| Diagnose domain & SSL | `neoconfig doctor`: بررسی DNS، پورت‌ها، فایروال و گواهی |
-| Uninstall | حذف کامل، با امکان نگه داشتن پشتیبان دیتابیس |
+| Status | وضعیت سرویس‌ها و دامنه‌ها |
+| Diagnose | بررسی سرویس‌ها، DNS، پورت‌ها، فایروال، گواهی و HTTPS |
+| Logs | لاگ زنده (api / web / nginx / ssl) |
+| Update | دانلود نسخهٔ جدید، پشتیبان‌گیری، اجرای مایگریشن‌ها؛ اگر نسخهٔ جدید بالا نیاید، خودکار برمی‌گردد |
+| Change admin password | تغییر رمز (و ایمیل) مدیر؛ همهٔ نشست‌ها خارج می‌شوند |
+| Change main domain | دامنهٔ جدید + گواهی |
+| Certificates | فهرست گواهی‌ها و صدور/تمدید: `neoconfig ssl add <domain>` |
+| Back up database | پشتیبان در `/opt/neoconfig/backups` (۱۰ نسخهٔ آخر) |
+| Roll back | برگشت به نسخهٔ قبلی |
+| Uninstall | حذف کامل، با نگه داشتن پشتیبان |
 
-همه به‌صورت فرمان مستقیم هم کار می‌کنند: `neoconfig update`، `neoconfig password`، `neoconfig uninstall` و…
+### دامنهٔ برندها
 
-- پنل مدیریت: `https://YOUR_DOMAIN/admin`
-- دامنهٔ هر برند: رکورد A را به IP سرور بزنید و در «برندها ← دامنه» اضافه کنید. Caddy قبل از صدور گواهی از API می‌پرسد که دامنه متعلق به یک برند باشد.
+در پنل ادمین ← برندها ← دامنه، دامنه را اضافه کنید. API فقط یک درخواست در صف می‌گذارد؛ سرویس جدای `neoconfig-ssl` با دسترسی root اول از API می‌پرسد که دامنه واقعاً متعلق به یک برند است، بعد گواهی می‌گیرد و nginx را تنظیم می‌کند. خود API هیچ‌وقت دسترسی root ندارد.
+
+### انتشار نسخهٔ جدید
+
+```bash
+git tag v1.0.1 && git push origin v1.0.1
+```
+
+GitHub Actions نسخهٔ آماده را برای amd64 و arm64 می‌سازد و در Releases می‌گذارد؛ سرورها با `neoconfig update` آن را می‌گیرند.
 
 ## اتصال به HMPanel
 
@@ -110,7 +114,7 @@ neoconfig
 ## توسعهٔ محلی
 
 ```bash
-docker compose up -d db
+docker compose up -d db   # فقط دیتابیس برای توسعه
 npm install
 npm run db:generate
 cd apps/api && npx prisma migrate deploy && cd ../..
@@ -129,7 +133,7 @@ npm test
 
 **Frontend:** Next.js 15 · React 19 · Tailwind · Framer Motion · PWA + Web Push  
 **Backend:** NestJS · Prisma · PostgreSQL · JWT · web-push  
-**Proxy:** Caddy (on-demand TLS)  
+**سرور:** systemd · nginx · acme.sh (Let's Encrypt) · PostgreSQL  
 **Panels:** 3x-ui (ثنایی) · PasarGuard · HMPanel
 
 ## امنیت

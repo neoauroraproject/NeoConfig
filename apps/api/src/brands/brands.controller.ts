@@ -100,6 +100,11 @@ export class BrandsController {
     return this.brands.removeDomain(user, id, domainId);
   }
 
+  @Post(':id/domains/:domainId/ssl')
+  issueSsl(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('domainId') domainId: string) {
+    return this.brands.issueSsl(user, id, domainId);
+  }
+
   @Post(':id/telegram/test')
   telegramTest(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.brands.telegramTest(user, id);

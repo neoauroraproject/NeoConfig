@@ -38,7 +38,8 @@ async function bootstrap() {
   await bootstrapAdmin(app.get(PrismaService));
 
   const port = Number(process.env.PORT || 4000);
-  await app.listen(port);
+  // Native installs bind to 127.0.0.1 behind nginx; containers keep 0.0.0.0.
+  await app.listen(port, process.env.HOST || '0.0.0.0');
   // eslint-disable-next-line no-console
   console.log(`NeoConfig API listening on :${port}`);
 }

@@ -14,6 +14,7 @@ import { brandScope, isOrgAdmin, requireOrgAdmin } from '../common/access/scope'
 import { encryptSecret } from '../common/crypto/secret.crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
+import { SslQueueService } from './ssl-queue.service';
 
 export interface RenewalPlan {
   id: string;
@@ -52,6 +53,7 @@ export class BrandsService {
     private readonly audit: AuditService,
     private readonly config: ConfigService,
     private readonly telegram: TelegramService,
+    private readonly ssl: SslQueueService,
   ) {}
 
   // ---------- public ----------
@@ -225,12 +227,34 @@ export class BrandsService {
     if (exists) throw new ConflictException('This domain is already connected to a brand');
     await this.prisma.brandDomain.create({ data: { brandId: brand.id, domain } });
     await this.audit.log({ orgId: brand.orgId, userId: user.id, action: 'brand.domain.add', resource: 'brand', resourceId: id, meta: { domain } });
+    // Start on the certificate right away; it succeeds once DNS points here.
+    await this.ssl.request(domain, 'issue');
     return this.get(user, id);
   }
 
   async removeDomain(user: AuthUser, id: string, domainId: string) {
     const brand = await this.mustOwn(user, id);
-    await this.prisma.brandDomain.deleteMany({ where: { id: domainId, brandId: brand.id } });
+    const row = await this.prisma.brandDomain.findFirst({ where: { id: domainId, brandId: brand.id } });
+    if (row) {
+      await this.prisma.brandDomain.delete({ where: { id: row.id } });
+      await this.ssl.request(row.domain, 'remove');
+    }
+    return this.get(user, id);
+  }
+
+  /** Ask the host for a (new) Let's Encrypt certificate for this domain. */
+  async issueSsl(user: AuthUser, id: string, domainId: string) {
+    const brand = await this.mustOwn(user, id);
+    const row = await this.prisma.brandDomain.findFirst({ where: { id: domainId, brandId: brand.id } });
+    if (!row) throw new NotFoundException('Domain not found');
+    if (!this.ssl.enabled) {
+      throw new BadRequestException('Automatic SSL is only available on servers installed with the NeoConfig installer');
+    }
+    await this.ssl.request(row.domain, 'issue');
+    await this.prisma.brandDomain.update({
+      where: { id: row.id },
+      data: { sslOk: false, checkMessage: 'Certificate requested — this takes up to a minute', lastCheckAt: new Date() },
+    });
     return this.get(user, id);
   }
 
@@ -254,6 +278,19 @@ export class BrandsService {
     } catch {
       message = 'No DNS record found for this domain';
     }
+    if (dnsOk && this.ssl.enabled) {
+      const result = await this.ssl.result(row.domain);
+      if (await this.ssl.isPending(row.domain)) {
+        message += ' · Certificate is being issued…';
+      } else if (result?.ok) {
+        message += ` · ${result.message}`;
+      } else if (result) {
+        message += ` · SSL failed: ${result.message}`;
+      } else {
+        await this.ssl.request(row.domain, 'issue');
+        message += ' · Certificate requested';
+      }
+    }
     if (dnsOk) {
       try {
         const res = await fetch(`https://${row.domain}/api/v1/health`, {
@@ -262,9 +299,8 @@ export class BrandsService {
         });
         sslOk = res.ok;
         message += sslOk ? ' · HTTPS OK' : ` · HTTPS answered ${res.status}`;
-      } catch (err) {
-        message += ' · HTTPS not ready yet (certificate is issued on the first visit)';
-        void err;
+      } catch {
+        if (!this.ssl.enabled) message += ' · HTTPS not reachable yet';
       }
     }
     await this.prisma.brandDomain.update({

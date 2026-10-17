@@ -150,6 +150,8 @@ export const adminApi = {
     request<AdminBrand>(`/api/v1/admin/brands/${id}/domains`, { method: 'POST', token: tk(), body: json({ domain }) }),
   removeDomain: (id: string, domainId: string) =>
     request<AdminBrand>(`/api/v1/admin/brands/${id}/domains/${domainId}`, { method: 'DELETE', token: tk() }),
+  issueSsl: (id: string, domainId: string) =>
+    request<AdminBrand>(`/api/v1/admin/brands/${id}/domains/${domainId}/ssl`, { method: 'POST', token: tk() }),
   checkDomain: (id: string, domainId: string) =>
     request<AdminBrand>(`/api/v1/admin/brands/${id}/domains/${domainId}/check`, { method: 'POST', token: tk() }),
   telegramTest: (id: string) =>

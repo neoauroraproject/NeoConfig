@@ -1,0 +1,74 @@
+# Builds the ready-to-run server bundle (Node + API + web) for amd64 and
+# arm64 and attaches it to a GitHub Release. Servers download it with
+# install.sh / `neoconfig update` — nothing is compiled on the server.
+#
+# Release:  git tag v1.0.0 && git push origin v1.0.0
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to (re)build, e.g. v1.0.0
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Build bundle
+        run: bash scripts/build-release.sh "${{ inputs.tag || github.ref_name }}"
+
+      - name: Smoke test
+        run: |
+          release/neoconfig/node/bin/node -v
+          bash -n release/neoconfig/neoconfig
+          test -f release/neoconfig/api/dist/main.js
+          test -f release/neoconfig/web/apps/web/server.js
+          ls release/neoconfig/api/node_modules/.prisma/client/ | grep -E 'libquery_engine'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neoconfig-${{ matrix.arch }}
+          path: |
+            release/neoconfig-linux-${{ matrix.arch }}.tar.xz
+            release/neoconfig-linux-${{ matrix.arch }}.tar.xz.sha256
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: NeoConfig ${{ inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: dist/*

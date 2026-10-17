@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { deriveStatus, expiryFromMs, quotaFromTotalBytes } from '../xui/normalize';
 import { NormalizedSubscription } from '../xui/types';
+import { RenewalTerms, nextQuotaBytes } from '../../panels/renewal-terms';
 
 export interface HmPanelConfig {
   /** Panel origin, e.g. https://panel.example.com */
@@ -71,13 +72,23 @@ export class HmPanelClientService {
     }
   }
 
-  async renew(cfg: HmPanelConfig, clientId: string, plan: { days: number; gb: number }) {
-    await this.request(cfg, 'POST', `/v1/clients/${encodeURIComponent(clientId)}/renew`, {
+  async renew(cfg: HmPanelConfig, clientId: string, plan: RenewalTerms) {
+    const id = encodeURIComponent(clientId);
+    const current = await this.request<HmPanelClient>(cfg, 'GET', `/v1/clients/${id}`);
+    const quota = nextQuotaBytes(current.totalBytes, plan);
+    await this.request(cfg, 'POST', `/v1/clients/${id}/renew`, {
       days: plan.days,
-      totalGb: plan.gb,
-      resetUsage: true,
+      totalGb: quota / 1024 ** 3,
+      resetUsage: plan.mode === 'reset',
     });
-    return { ok: true, message: 'Renewed on HMPanel' };
+    let note = '';
+    if (plan.users > 0) {
+      // Needs the clients.write scope; a renewal still counts if the key lacks it.
+      await this.request(cfg, 'PATCH', `/v1/clients/${id}`, { limitIp: plan.users }).catch((err) => {
+        note = ` (user limit not changed: ${err instanceof Error ? err.message : 'failed'})`;
+      });
+    }
+    return { ok: true, message: `Renewed on HMPanel${note}` };
   }
 
   private async request<T>(cfg: HmPanelConfig, method: string, path: string, body?: unknown): Promise<T> {

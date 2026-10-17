@@ -140,8 +140,13 @@ model Brand {
 
   /// Telegram notices for the sales team: new receipts and decisions.
   /// Bot token is AES-GCM encrypted at rest.
-  telegramBotTokenEnc String?
-  telegramChatId      String?
+  telegramBotTokenEnc   String?
+  telegramChatId        String?
+  /// Random secret Telegram echoes on webhook calls (inline approve/reject).
+  telegramWebhookSecret String?
+  /// Uploaded logo (PNG/JPEG/WebP, ≤512 KB), served at /api/v1/public/brands/<slug>/logo
+  logoData              Bytes?
+  logoMime              String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -315,6 +320,10 @@ model RenewalRequest {
   planTitle      String
   days           Int
   gb             Float
+  /// Allowed simultaneous users (0 = unchanged)
+  users          Int           @default(0)
+  /// add = extend time/data, reset = new period with usage zeroed
+  mode           String        @default("add")
   price          String
   payerName      String?
   payerNote      String?

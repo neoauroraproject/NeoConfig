@@ -2,10 +2,8 @@
 
 import { motion } from 'framer-motion';
 import {
-  ArrowDown,
-  ArrowUp,
-  CalendarClock,
-  Copy,
+  ChevronLeft,
+  ChevronRight,
   Grip,
   Home,
   Layers,
@@ -14,11 +12,13 @@ import {
   QrCode,
   RefreshCw,
   RotateCw,
+  Smartphone,
+  Wifi,
 } from 'lucide-react';
 import { ReactNode } from 'react';
 import type { PublicRenewal, SubStatus } from '@/lib/api';
 import { SavedAccount, dailyUsage } from '@/lib/accounts';
-import { bytesParts, daysUntil, formatBytes, formatDate, relativeTime, usageFraction } from '@/lib/format';
+import { bytesParts, daysUntil, formatBytes, relativeTime, usageFraction } from '@/lib/format';
 import { BrandMark } from './BrandMark';
 import { useSf } from './context';
 
@@ -28,7 +28,8 @@ type Props = {
   refreshing: boolean;
   renewals: PublicRenewal[];
   onRefresh: () => void;
-  onCopy: () => void;
+  onApps: () => void;
+  onInfo: () => void;
   onQr: () => void;
   onRenew: () => void;
   onAccounts: () => void;
@@ -126,8 +127,8 @@ export function Dashboard(p: Props) {
           <RefreshCw className={`h-5 w-5 ${p.refreshing ? 'animate-spin' : ''}`} strokeWidth={1.6} />
         </RoundAction>
         {brand.allowCopyLink ? (
-          <RoundAction label={t('copyLink')} onClick={p.onCopy}>
-            <Copy className="h-5 w-5" strokeWidth={1.6} />
+          <RoundAction label={t('addToApp')} onClick={p.onApps}>
+            <Smartphone className="h-5 w-5" strokeWidth={1.6} />
           </RoundAction>
         ) : (
           <SupportAction />
@@ -154,26 +155,28 @@ export function Dashboard(p: Props) {
 
       <UsageCard />
 
-      {/* details */}
+      {/* last connection + more info */}
       <section className="mt-3 rounded-[1.75rem] bg-surface p-2 shadow-raise">
-        {s.uploadBytes !== null && (
-          <Row icon={<ArrowUp className="h-4 w-4" />} label={t('upload')} value={formatBytes(s.uploadBytes)} />
-        )}
-        {s.downloadBytes !== null && (
-          <Row icon={<ArrowDown className="h-4 w-4" />} label={t('download')} value={formatBytes(s.downloadBytes)} />
-        )}
-        <Row
-          icon={<CalendarClock className="h-4 w-4" />}
-          label={t('expiresOn')}
-          value={s.expiryKind === 'none' ? t('noExpiry') : s.expiryKind === 'known' ? formatDate(s.expiryAt, locale) : t('unknown')}
-          latin={false}
-        />
-        <Row
-          icon={<Layers className="h-4 w-4" />}
-          label={t('total')}
-          value={s.quotaKind === 'unlimited' ? t('unlimited') : s.quotaKind === 'known' ? formatBytes(s.quotaBytes) : t('unknown')}
-          last
-        />
+        <div className="flex items-center gap-3 border-b border-line px-3 py-3">
+          <span className="grid h-10 w-10 place-items-center rounded-full bg-surface-2 text-ink-2">
+            <Wifi className="h-4 w-4" />
+          </span>
+          <span className="flex-1 text-sm text-ink-2">{t('lastOnline')}</span>
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-ink">
+            {p.account.online && <span className="h-2 w-2 rounded-full bg-[#1fa66a]" />}
+            {p.account.online
+              ? t('onlineNow')
+              : p.account.lastOnlineAt
+                ? relativeTime(p.account.lastOnlineAt, locale)
+                : s.status === 'on_hold'
+                  ? t('neverOnline')
+                  : t('unknown')}
+          </span>
+        </div>
+        <button type="button" onClick={p.onInfo} className="flex w-full items-center gap-3 rounded-3xl px-3 py-3 text-start">
+          <span className="flex-1 text-sm font-medium text-ink">{t('moreInfo')}</span>
+          {locale === 'fa' ? <ChevronLeft className="h-4 w-4 text-ink-3" /> : <ChevronRight className="h-4 w-4 text-ink-3" />}
+        </button>
       </section>
 
       {/* bottom nav */}
@@ -383,30 +386,6 @@ function RoundAction({
       </span>
       <span className="text-xs text-ink-2">{label}</span>
     </button>
-  );
-}
-
-function Row({
-  icon,
-  label,
-  value,
-  last,
-  latin = true,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  last?: boolean;
-  latin?: boolean;
-}) {
-  return (
-    <div className={`flex items-center gap-3 px-3 py-3 ${last ? '' : 'border-b border-line'}`}>
-      <span className="grid h-10 w-10 place-items-center rounded-full bg-surface-2 text-ink-2">{icon}</span>
-      <span className="flex-1 text-sm text-ink-2">{label}</span>
-      <span className={`text-sm font-medium text-ink ${latin ? 'num text-[13px]' : ''}`} dir={latin ? 'ltr' : undefined}>
-        {value}
-      </span>
-    </div>
   );
 }
 

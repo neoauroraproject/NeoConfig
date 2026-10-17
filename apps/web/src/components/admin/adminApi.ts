@@ -84,6 +84,8 @@ export type AdminRenewal = {
   planTitle: string;
   days: number;
   gb: number;
+  users: number;
+  mode: string;
   price: string;
   payerName: string | null;
   payerNote: string | null;
@@ -155,7 +157,10 @@ export const adminApi = {
   checkDomain: (id: string, domainId: string) =>
     request<AdminBrand>(`/api/v1/admin/brands/${id}/domains/${domainId}/check`, { method: 'POST', token: tk() }),
   telegramTest: (id: string) =>
-    request<{ ok: boolean }>(`/api/v1/admin/brands/${id}/telegram/test`, { method: 'POST', token: tk() }),
+    request<{ ok: boolean; buttons?: boolean; buttonsMessage?: string }>(`/api/v1/admin/brands/${id}/telegram/test`, { method: 'POST', token: tk() }),
+  uploadLogo: (id: string, dataUrl: string) =>
+    request<AdminBrand>(`/api/v1/admin/brands/${id}/logo`, { method: 'POST', token: tk(), body: json({ dataUrl }) }),
+  removeLogo: (id: string) => request<AdminBrand>(`/api/v1/admin/brands/${id}/logo`, { method: 'DELETE', token: tk() }),
   broadcast: (id: string, title: string, body: string) =>
     request<{ sent: number; total: number }>(`/api/v1/admin/brands/${id}/push`, {
       method: 'POST',

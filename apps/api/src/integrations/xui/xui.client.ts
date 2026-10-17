@@ -16,6 +16,7 @@ import {
   remaining,
 } from './normalize';
 import { NormalizedSubscription } from './types';
+import { RenewalTerms, nextExpiryMs, nextQuotaBytes } from '../../panels/renewal-terms';
 
 const GB = 1024 * 1024 * 1024;
 
@@ -284,11 +285,11 @@ export class XuiClientService {
     };
   }
 
-  /** Extend expiry by `days`, set the quota to `gb` (0 = unlimited) and reset usage. */
+  /** Apply renewal terms to every client sharing the subId (see RenewalTerms). */
   async renewBySubId(
     cfg: XuiConnectionConfig,
     subId: string,
-    plan: { days: number; gb: number },
+    plan: RenewalTerms,
   ): Promise<{ ok: boolean; message: string }> {
     const inbounds = await this.listInboundsSafe(cfg);
     if (!inbounds) {
@@ -301,14 +302,14 @@ export class XuiClientService {
     const now = Date.now();
     for (const { inbound, client } of matches) {
       const current = Number(client.expiryTime) || 0;
-      const base = current > now ? current : now;
-      const expiryTime = plan.days > 0 ? base + plan.days * 86_400_000 : current;
-      const updated = {
+      const updated: XuiInboundClient = {
         ...client,
         enable: true,
-        expiryTime,
-        totalGB: plan.gb > 0 ? Math.round(plan.gb * GB) : 0,
+        // A negative expiry is "starts on first use"; a renewal makes it concrete.
+        expiryTime: nextExpiryMs(current < 0 ? 0 : current, plan.days, now),
+        totalGB: nextQuotaBytes(Number(client.totalGB) || 0, plan),
       };
+      if (plan.users > 0) updated.limitIp = plan.users;
       const key = clientKey(String(inbound.protocol ?? ''), client);
       const res = await this.request<unknown>(
         cfg,
@@ -322,14 +323,16 @@ export class XuiClientService {
       if (!res.success) {
         return { ok: false, message: res.msg || `updateClient failed for ${client.email}` };
       }
-      const reset = await this.request<unknown>(
-        cfg,
-        'POST',
-        `/panel/api/inbounds/${inbound.id}/resetClientTraffic/${encodeURIComponent(client.email)}`,
-        { session },
-      );
-      if (!reset.success) {
-        return { ok: false, message: reset.msg || `Traffic reset failed for ${client.email}` };
+      if (plan.mode === 'reset') {
+        const reset = await this.request<unknown>(
+          cfg,
+          'POST',
+          `/panel/api/inbounds/${inbound.id}/resetClientTraffic/${encodeURIComponent(client.email)}`,
+          { session },
+        );
+        if (!reset.success) {
+          return { ok: false, message: reset.msg || `Traffic reset failed for ${client.email}` };
+        }
       }
     }
     this.cache.delete(cacheKey(cfg));

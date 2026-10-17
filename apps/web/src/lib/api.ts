@@ -39,7 +39,16 @@ export type LookupResponse = {
   renewable: boolean;
 };
 
-export type RenewalPlan = { id: string; title: string; days: number; gb: number; price: string };
+export type RenewalPlan = {
+  id: string;
+  title: string;
+  days: number;
+  gb: number;
+  price: string;
+  /** Allowed simultaneous users; 0 = unchanged. */
+  users: number;
+  mode: 'add' | 'reset';
+};
 
 export type Branding = {
   slug: string;

@@ -101,6 +101,20 @@ const fa = {
   renewUnavailable: 'تمدید آنلاین برای این سرویس فعال نیست. با پشتیبانی در تماس باش.',
   done: 'متوجه شدم',
   online: 'آنلاین',
+  addToApp: 'افزودن به اپ',
+  singleUser: 'تک‌کاربره',
+  usersCount: 'کاربره',
+  appsTitle: 'افزودن به برنامه',
+  appsHint: 'برنامه‌ات را انتخاب کن؛ «افزودن» اشتراک را مستقیم داخلش وارد می‌کند. اگر برنامه را نداری، اول نصبش کن.',
+  addInApp: 'افزودن',
+  getApp: 'دریافت',
+  copyThenImport: 'لینک را کپی کن و در برنامه گزینهٔ وارد کردن از کلیپ‌بورد را بزن.',
+  moreInfo: 'اطلاعات بیشتر',
+  subscriptionName: 'نام اشتراک',
+  statusLabel: 'وضعیت',
+  usedPercent: 'درصد مصرف',
+  daysRemaining: 'روزهای باقی‌مانده',
+  lastSynced: 'آخرین به‌روزرسانی اطلاعات',
 } as const;
 
 export type DictKey = keyof typeof fa;
@@ -206,6 +220,20 @@ const en: Record<DictKey, string> = {
   renewUnavailable: 'Online renewal isn’t available for this service. Contact support.',
   done: 'Got it',
   online: 'Online',
+  addToApp: 'Add to app',
+  singleUser: '1 user',
+  usersCount: 'users',
+  appsTitle: 'Add to an app',
+  appsHint: 'Pick your app; “Add” imports the subscription straight into it. Install the app first if you don’t have it.',
+  addInApp: 'Add',
+  getApp: 'Get',
+  copyThenImport: 'Copy the link, then use “import from clipboard” in the app.',
+  moreInfo: 'More details',
+  subscriptionName: 'Subscription',
+  statusLabel: 'Status',
+  usedPercent: 'Used',
+  daysRemaining: 'Days left',
+  lastSynced: 'Data updated',
 };
 
 const dicts: Record<Locale, Record<DictKey, string>> = { fa, en };

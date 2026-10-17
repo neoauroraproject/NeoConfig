@@ -50,12 +50,22 @@ describe('HMPanel adapter', () => {
     expect(await svc.lookup(cfg, 'missing')).toBeNull();
   });
 
-  it('renews through the admin API with a usage reset', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(client), { status: 200 }));
+  it('reset mode sets the new quota and zeroes usage', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(client), { status: 200 })));
     vi.stubGlobal('fetch', fetchMock);
-    await new HmPanelClientService().renew({ baseUrl: 'https://p.io', apiToken: 'hmp_x' }, 'c1', { days: 30, gb: 50 });
-    const [url, init] = fetchMock.mock.calls[0];
+    await new HmPanelClientService().renew({ baseUrl: 'https://p.io', apiToken: 'hmp_x' }, 'c1', { days: 30, gb: 50, users: 0, mode: 'reset' });
+    const [url, init] = fetchMock.mock.calls[1];
     expect(url).toBe('https://p.io/api/v1/clients/c1/renew');
     expect(JSON.parse(init.body)).toEqual({ days: 30, totalGb: 50, resetUsage: true });
+  });
+
+  it('add mode stacks data on the current quota and sets the user limit', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(client), { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+    const r = await new HmPanelClientService().renew({ baseUrl: 'https://p.io', apiToken: 'hmp_x' }, 'c1', { days: 30, gb: 10, users: 2, mode: 'add' });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ days: 30, totalGb: 30, resetUsage: false });
+    expect(fetchMock.mock.calls[2][0]).toBe('https://p.io/api/v1/clients/c1');
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ limitIp: 2 });
+    expect(r.ok).toBe(true);
   });
 });

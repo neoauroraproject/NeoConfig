@@ -38,8 +38,8 @@ describe('TelegramService', () => {
     expect(form.get('chat_id')).toBe('-1001234');
     const caption = String(form.get('caption'));
     expect(caption).toContain('Arian &lt;Net&gt;');
-    expect(caption).toContain('30 روز');
-    expect(caption).toContain('https://neo.example.com/admin#renewals');
+    expect(caption).toContain('+30 روز');
+    expect(JSON.parse(String(form.get('reply_markup'))).inline_keyboard[0].map((b: { callback_data: string }) => b.callback_data)).toEqual(['nc:a:r1', 'nc:r:r1']);
   });
 
   it('falls back to a text message when the photo fails, and never throws', async () => {

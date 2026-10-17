@@ -5,10 +5,11 @@ import { PublicModule } from '../public/public.module';
 import { PushModule } from '../push/push.module';
 import { RenewalsController } from './renewals.controller';
 import { RenewalsService } from './renewals.service';
+import { TelegramWebhookController } from './telegram-webhook.controller';
 
 @Module({
   imports: [BrandsModule, PanelsModule, PublicModule, PushModule],
-  controllers: [RenewalsController],
+  controllers: [RenewalsController, TelegramWebhookController],
   providers: [RenewalsService],
 })
 export class RenewalsModule {}

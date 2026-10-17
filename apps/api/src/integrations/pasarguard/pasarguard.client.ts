@@ -6,6 +6,7 @@ import {
   remaining,
 } from '../xui/normalize';
 import { NormalizedStatus, NormalizedSubscription } from '../xui/types';
+import { RenewalTerms, nextExpiryMs, nextQuotaBytes } from '../../panels/renewal-terms';
 
 const GB = 1024 * 1024 * 1024;
 
@@ -109,22 +110,20 @@ export class PasarGuardClientService {
   async renew(
     cfg: PasarGuardConfig,
     username: string,
-    plan: { days: number; gb: number },
+    plan: RenewalTerms,
   ): Promise<{ ok: boolean; message: string }> {
     const path = `/api/user/${encodeURIComponent(username)}`;
     const user = await this.request<PasarGuardUser>(cfg, 'GET', path);
-    const now = Date.now();
-    const currentMs = expireToMs(user.expire);
-    const base = currentMs && currentMs > now ? currentMs : now;
     const body: Record<string, unknown> = {
       status: 'active',
-      data_limit: plan.gb > 0 ? Math.round(plan.gb * GB) : 0,
+      data_limit: nextQuotaBytes(Number(user.data_limit) || 0, plan),
     };
     if (plan.days > 0) {
-      body.expire = new Date(base + plan.days * 86_400_000).toISOString();
+      body.expire = new Date(nextExpiryMs(expireToMs(user.expire) ?? 0, plan.days)).toISOString();
     }
+    if (plan.users > 0) body.hwid_limit = plan.users;
     await this.request(cfg, 'PUT', path, body);
-    await this.request(cfg, 'POST', `${path}/reset`);
+    if (plan.mode === 'reset') await this.request(cfg, 'POST', `${path}/reset`);
     return { ok: true, message: 'Renewed on PasarGuard' };
   }
 

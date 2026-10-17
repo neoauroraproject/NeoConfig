@@ -21,6 +21,7 @@ import { Dashboard } from './Dashboard';
 import { Onboarding } from './Onboarding';
 import { RenewSheet } from './RenewSheet';
 import { AccountsSheet, InstallIosSheet, MenuSheet, QrSheet } from './Sheets';
+import { AppsSheet, InfoSheet } from './InfoSheets';
 import { SfContext, brandStyle, makeT } from './context';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -28,7 +29,7 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
-type SheetName = 'accounts' | 'menu' | 'qr' | 'renew' | 'install' | null;
+type SheetName = 'accounts' | 'menu' | 'qr' | 'renew' | 'install' | 'apps' | 'info' | null;
 
 export function Storefront({ brand, tenant, demo = false }: { brand: Branding; tenant: string; demo?: boolean }) {
   const storeKey = demo ? `demo.${tenant}` : tenant;
@@ -256,11 +257,11 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
 
   return (
     <SfContext.Provider value={ctx}>
-      <div data-theme={brand.theme} className="sf min-h-dvh" style={brandStyle(brand)} dir={isRtl(locale) ? 'rtl' : 'ltr'} lang={locale}>
+      <div data-theme={brand.theme} className="sf sf-root min-h-dvh" style={brandStyle(brand)} dir={isRtl(locale) ? 'rtl' : 'ltr'} lang={locale}>
         {!ready ? (
           <div className="min-h-dvh" />
         ) : !active || adding ? (
-          <div className="mx-auto w-full max-w-[440px]">
+          <div className="mx-auto w-full max-w-[440px] sm:flex sm:min-h-dvh sm:max-w-[460px] sm:flex-col sm:justify-center sm:px-4">
             <Onboarding
               busy={busy}
               error={error}
@@ -277,14 +278,8 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
             refreshing={refreshing}
             renewals={accountRenewals}
             onRefresh={refreshActive}
-            onCopy={async () => {
-              try {
-                await navigator.clipboard.writeText(active.url);
-                toast(t('copied'));
-              } catch {
-                toast(t('err_generic'));
-              }
-            }}
+            onApps={() => setSheet('apps')}
+            onInfo={() => setSheet('info')}
             onQr={() => setSheet('qr')}
             onRenew={() => setSheet('renew')}
             onAccounts={() => setSheet('accounts')}
@@ -323,6 +318,8 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
               }}
             />
             <QrSheet open={sheet === 'qr'} onClose={() => setSheet(null)} url={active.url} />
+            <AppsSheet open={sheet === 'apps'} onClose={() => setSheet(null)} account={active} />
+            <InfoSheet open={sheet === 'info'} onClose={() => setSheet(null)} account={active} />
             <RenewSheet
               open={sheet === 'renew'}
               onClose={() => setSheet(null)}

@@ -26,8 +26,8 @@ export default async function DemoPage({ searchParams }: Props) {
       bankName: 'بانک ملی',
       note: null,
       plans: [
-        { id: 'p1', title: 'یک‌ماهه ۵۰ گیگ', days: 30, gb: 50, price: '۱۵۰٬۰۰۰ تومان' },
-        { id: 'p2', title: 'سه‌ماهه نامحدود', days: 90, gb: 0, price: '۴۲۰٬۰۰۰ تومان' },
+        { id: 'p1', title: 'یک‌ماهه ۵۰ گیگ تک‌کاربره', days: 30, gb: 50, price: '۱۵۰٬۰۰۰ تومان', users: 1, mode: 'add' },
+        { id: 'p2', title: 'سه‌ماهه ۱۵۰ گیگ دوکاربره', days: 90, gb: 150, price: '۴۲۰٬۰۰۰ تومان', users: 2, mode: 'add' },
       ],
     },
   };

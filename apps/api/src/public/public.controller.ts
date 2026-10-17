@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, NotFoundException, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, NotFoundException, Param, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
 import { BrandsService } from '../brands/brands.service';
@@ -33,7 +34,17 @@ export class PublicController {
     return this.publicService.lookupForTenant(body.url, body.tenant);
   }
 
-  /** Caddy `on_demand_tls { ask … }` — 200 lets it issue a certificate. */
+  @Get('brands/:slug/logo')
+  async logo(@Param('slug') slug: string, @Res() res: Response) {
+    const logo = await this.brands.logo(slug);
+    if (!logo) throw new NotFoundException();
+    res.setHeader('Content-Type', logo.mime);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(logo.data);
+  }
+
+  /** The SSL worker asks this before issuing a certificate for a brand domain. */
   @Get('domain-check')
   async domainCheck(@Query('domain') domain?: string) {
     if (domain && (await this.brands.isServedDomain(domain))) return { ok: true };

@@ -46,7 +46,7 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
   const [kickerA, kickerB] = splitKicker(brand.tagline || t('onboardKicker'));
 
   return (
-    <div className="relative flex min-h-dvh flex-col overflow-hidden bg-surface sm:my-6 sm:min-h-[calc(100dvh-3rem)] sm:rounded-5xl sm:shadow-raise">
+    <div className="relative flex min-h-dvh flex-col overflow-hidden bg-surface sm:my-8 sm:min-h-[min(720px,calc(100dvh-4rem))] sm:rounded-5xl sm:shadow-raise">
       {graphite ? <DotField /> : <Aurora />}
 
       <header className="relative z-10 flex items-center justify-between px-7 pt-[max(1.75rem,env(safe-area-inset-top))]">
@@ -69,7 +69,7 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
         )}
       </header>
 
-      <div className="relative z-10 mt-auto px-7 pb-7">
+      <div className="relative z-10 mt-auto px-7 pb-7 sm:px-9 sm:pb-9">
         <motion.div
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}

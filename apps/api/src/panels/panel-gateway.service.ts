@@ -6,6 +6,7 @@ import { HmPanelClientService, normalizeHmPanelClient } from '../integrations/hm
 import { PasarGuardClientService } from '../integrations/pasarguard/pasarguard.client';
 import { NormalizedSubscription } from '../integrations/xui/types';
 import { XuiClientService } from '../integrations/xui/xui.client';
+import { RenewalTerms } from './renewal-terms';
 
 export type PanelType = 'xui' | 'pasarguard' | 'hmpanel';
 
@@ -117,7 +118,7 @@ export class PanelGatewayService {
   async renew(
     row: PanelConnection,
     clientRef: string,
-    plan: { days: number; gb: number },
+    plan: RenewalTerms,
   ): Promise<{ ok: boolean; message: string }> {
     const cfg = this.creds(row);
     try {

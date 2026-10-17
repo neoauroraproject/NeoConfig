@@ -4,6 +4,7 @@ import { Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -23,6 +24,12 @@ class PlanDto {
   @IsNumber() days!: number;
   @IsNumber() gb!: number;
   @IsString() @MaxLength(40) price!: string;
+  @IsOptional() @IsNumber() users?: number;
+  @IsOptional() @IsIn(['add', 'reset']) mode?: string;
+}
+
+class LogoDto {
+  @IsString() @MaxLength(800_000) dataUrl!: string;
 }
 
 class BrandDto {
@@ -98,6 +105,16 @@ export class BrandsController {
   @Delete(':id/domains/:domainId')
   removeDomain(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('domainId') domainId: string) {
     return this.brands.removeDomain(user, id, domainId);
+  }
+
+  @Post(':id/logo')
+  uploadLogo(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: LogoDto) {
+    return this.brands.uploadLogo(user, id, body.dataUrl);
+  }
+
+  @Delete(':id/logo')
+  removeLogo(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.brands.removeLogo(user, id);
   }
 
   @Post(':id/domains/:domainId/ssl')

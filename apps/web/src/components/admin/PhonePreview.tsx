@@ -85,7 +85,8 @@ export function PhonePreview({ brand }: { brand: Branding }) {
                     refreshing={false}
                     renewals={[]}
                     onRefresh={noop}
-                    onCopy={noop}
+                    onApps={noop}
+                    onInfo={noop}
                     onQr={noop}
                     onRenew={noop}
                     onAccounts={noop}

@@ -1,16 +1,19 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { RenewalStatus } from '@prisma/client';
+import { RenewalRequest, RenewalStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../auth/auth.types';
 import { BrandsService, parsePlans } from '../brands/brands.service';
 import { brandScope } from '../common/access/scope';
 import { decryptSecret, encryptSecret } from '../common/crypto/secret.crypto';
 import { PanelGatewayService } from '../panels/panel-gateway.service';
+import { describeTerms, normalizeTerms } from '../panels/renewal-terms';
 import { PrismaService } from '../prisma/prisma.service';
 import { PublicService } from '../public/public.service';
 import { PushService } from '../push/push.service';
 import { TelegramService } from '../telegram/telegram.service';
+
+type RenewalRow = Omit<RenewalRequest, 'receiptData'>;
 
 const MAX_RECEIPT_BYTES = 3 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -70,6 +73,8 @@ export class RenewalsService {
         planTitle: plan.title,
         days: plan.days,
         gb: plan.gb,
+        users: plan.users,
+        mode: plan.mode,
         price: plan.price,
         payerName: input.payerName?.trim().slice(0, 80) || null,
         payerNote: input.payerNote?.trim().slice(0, 300) || null,
@@ -116,6 +121,8 @@ export class RenewalsService {
       planTitle: r.planTitle,
       days: r.days,
       gb: r.gb,
+      users: r.users,
+      mode: r.mode,
       price: r.price,
       payerName: r.payerName,
       payerNote: r.payerNote,
@@ -140,8 +147,33 @@ export class RenewalsService {
 
   async approve(user: AuthUser, id: string, opts: { apply: boolean; note?: string }) {
     const row = await this.mustFind(user, id);
-    if (row.status !== RenewalStatus.PENDING) throw new BadRequestException('Already decided');
+    return this.decideApprove(row, { ...opts, by: user.email, userId: user.id, telegramOrigin: false });
+  }
 
+  async reject(user: AuthUser, id: string, note?: string) {
+    const row = await this.mustFind(user, id);
+    return this.decideReject(row, { note, by: user.email, userId: user.id, telegramOrigin: false });
+  }
+
+  /**
+   * Decisions from the brand's Telegram group (inline buttons). The webhook
+   * has already checked the secret and the chat; renewals are applied on the
+   * panel whenever the account was found there.
+   */
+  async decideFromTelegram(brandId: string, id: string, approve: boolean, by: string) {
+    const row = await this.prisma.renewalRequest.findFirst({ where: { id, brandId }, omit: { receiptData: true } });
+    if (!row) throw new NotFoundException('Request not found');
+    return approve
+      ? this.decideApprove(row, { apply: Boolean(row.panelId && row.clientRef), by, userId: null, telegramOrigin: true })
+      : this.decideReject(row, { by, userId: null, telegramOrigin: true });
+  }
+
+  private async decideApprove(
+    row: RenewalRow,
+    opts: { apply: boolean; note?: string; by: string; userId: string | null; telegramOrigin: boolean },
+  ) {
+    if (row.status !== RenewalStatus.PENDING) throw new BadRequestException('Already decided');
+    const terms = normalizeTerms({ days: row.days, gb: row.gb, users: row.users, mode: row.mode as 'add' | 'reset' });
     let appliedOnPanel: boolean | null = null;
     let applyMessage: string | null = null;
     if (opts.apply) {
@@ -149,28 +181,28 @@ export class RenewalsService {
       if (!target) {
         throw new BadRequestException('Account not found on any panel. Approve without applying and renew it manually.');
       }
-      const res = await this.gateway.renew(target.panel, target.clientRef, { days: row.days, gb: row.gb });
+      const res = await this.gateway.renew(target.panel, target.clientRef, terms);
       appliedOnPanel = res.ok;
-      applyMessage = res.message;
+      applyMessage = res.ok ? `${describeTerms(terms)} — ${res.message}` : res.message;
       if (!res.ok) {
         // Stay pending so the admin can retry or approve without applying.
-        await this.prisma.renewalRequest.update({ where: { id }, data: { appliedOnPanel, applyMessage } });
+        await this.prisma.renewalRequest.update({ where: { id: row.id }, data: { appliedOnPanel, applyMessage } });
         throw new BadRequestException(`Panel did not accept the renewal: ${res.message}`);
       }
     }
 
     await this.prisma.renewalRequest.update({
-      where: { id },
+      where: { id: row.id },
       data: {
         status: RenewalStatus.APPROVED,
         adminNote: opts.note?.trim().slice(0, 300) || null,
         appliedOnPanel,
         applyMessage,
         decidedAt: new Date(),
-        decidedById: user.id,
+        decidedById: opts.userId,
       },
     });
-    void this.notifyTeam(row, { approved: true, by: user.email, appliedOnPanel, note: opts.note });
+    if (!opts.telegramOrigin) void this.notifyTeam(row, { approved: true, by: opts.by, appliedOnPanel, note: opts.note });
     const push = await this.push.notifySubscription(
       row.brandId,
       row.subId,
@@ -184,40 +216,42 @@ export class RenewalsService {
     );
     await this.audit.log({
       orgId: row.orgId,
-      userId: user.id,
+      userId: opts.userId,
       action: 'renewal.approve',
       resource: 'renewal',
-      resourceId: id,
-      meta: { appliedOnPanel },
+      resourceId: row.id,
+      meta: { appliedOnPanel, by: opts.by },
     });
     return { ok: true, appliedOnPanel, applyMessage, notified: push.sent };
   }
 
-  async reject(user: AuthUser, id: string, note?: string) {
-    const row = await this.mustFind(user, id);
+  private async decideReject(
+    row: RenewalRow,
+    opts: { note?: string; by: string; userId: string | null; telegramOrigin: boolean },
+  ) {
     if (row.status !== RenewalStatus.PENDING) throw new BadRequestException('Already decided');
     await this.prisma.renewalRequest.update({
-      where: { id },
+      where: { id: row.id },
       data: {
         status: RenewalStatus.REJECTED,
-        adminNote: note?.trim().slice(0, 300) || null,
+        adminNote: opts.note?.trim().slice(0, 300) || null,
         decidedAt: new Date(),
-        decidedById: user.id,
+        decidedById: opts.userId,
       },
     });
-    void this.notifyTeam(row, { approved: false, by: user.email, appliedOnPanel: null, note });
+    if (!opts.telegramOrigin) void this.notifyTeam(row, { approved: false, by: opts.by, appliedOnPanel: null, note: opts.note });
     const push = await this.push.notifySubscription(
       row.brandId,
       row.subId,
       {
         title: 'درخواست تمدید تأیید نشد',
-        body: note?.trim() || 'پرداخت شما تأیید نشد. برای جزئیات برنامه را باز کنید.',
+        body: opts.note?.trim() || 'پرداخت شما تأیید نشد. برای جزئیات برنامه را باز کنید.',
         url: '/',
         tag: `renewal-${row.id}`,
       },
       row.deviceEndpoint,
     );
-    await this.audit.log({ orgId: row.orgId, userId: user.id, action: 'renewal.reject', resource: 'renewal', resourceId: id });
+    await this.audit.log({ orgId: row.orgId, userId: opts.userId, action: 'renewal.reject', resource: 'renewal', resourceId: row.id, meta: { by: opts.by } });
     return { ok: true, notified: push.sent };
   }
 

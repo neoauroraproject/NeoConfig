@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Brand, BrandDomain, PanelConnection, Prisma } from '@prisma/client';
+import { randomBytes } from 'crypto';
 import { lookup } from 'dns/promises';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../auth/auth.types';
@@ -22,7 +23,14 @@ export interface RenewalPlan {
   days: number;
   gb: number;
   price: string;
+  /** Allowed simultaneous users; 0 = unchanged. */
+  users: number;
+  /** add = extend time and data; reset = new period, usage zeroed. */
+  mode: 'add' | 'reset';
 }
+
+/** Plans as they arrive from the admin form (new fields may be missing). */
+export type PlanInput = Omit<RenewalPlan, 'users' | 'mode'> & { users?: number; mode?: string };
 
 export const THEMES = ['mist', 'graphite', 'sage'] as const;
 
@@ -38,7 +46,7 @@ export type BrandInput = Partial<Record<(typeof EDITABLE)[number], string | bool
   active?: boolean;
   isDefault?: boolean;
   ownerId?: string | null;
-  plans?: RenewalPlan[];
+  plans?: PlanInput[];
   panelIds?: string[];
   /** Write-only. Empty string clears it. */
   telegramBotToken?: string;
@@ -200,6 +208,10 @@ export class BrandsService {
       await tx.brand.update({ where: { id }, data });
     });
     await this.audit.log({ orgId: brand.orgId, userId: user.id, action: 'brand.update', resource: 'brand', resourceId: id });
+    if (input.telegramBotToken !== undefined || input.telegramChatId !== undefined) {
+      const fresh = await this.prisma.brand.findUnique({ where: { id } });
+      if (fresh) await this.telegram.registerWebhook(fresh).catch(() => undefined);
+    }
     return this.get(user, id);
   }
 
@@ -343,8 +355,38 @@ export class BrandsService {
       out.telegramBotTokenEnc = token
         ? encryptSecret(token, this.config.getOrThrow<string>('ENCRYPTION_KEY'))
         : null;
+      out.telegramWebhookSecret = token ? randomBytes(24).toString('hex') : null;
     }
     return out;
+  }
+
+  /** Logo as a data URL (PNG/JPEG/WebP ≤512 KB); served from our own origin. */
+  async uploadLogo(user: AuthUser, id: string, dataUrl: string) {
+    const brand = await this.mustOwn(user, id);
+    const m = /^data:(image\/(png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl || '');
+    if (!m) throw new BadRequestException('Upload a PNG, JPEG or WebP image');
+    const data = Buffer.from(m[3], 'base64');
+    if (data.length > 512 * 1024) throw new BadRequestException('Logo must be under 512 KB');
+    await this.prisma.brand.update({
+      where: { id: brand.id },
+      data: {
+        logoData: new Uint8Array(data),
+        logoMime: m[1],
+        logoUrl: `/api/v1/public/brands/${brand.slug}/logo?v=${Date.now().toString(36)}`,
+      },
+    });
+    return this.get(user, id);
+  }
+
+  async removeLogo(user: AuthUser, id: string) {
+    const brand = await this.mustOwn(user, id);
+    await this.prisma.brand.update({ where: { id: brand.id }, data: { logoData: null, logoMime: null, logoUrl: null } });
+    return this.get(user, id);
+  }
+
+  async logo(slug: string) {
+    const b = await this.prisma.brand.findUnique({ where: { slug }, select: { logoData: true, logoMime: true } });
+    return b?.logoData && b.logoMime ? { data: Buffer.from(b.logoData), mime: b.logoMime } : null;
   }
 
   async telegramTest(user: AuthUser, id: string) {
@@ -354,7 +396,9 @@ export class BrandsService {
     } catch (err) {
       throw new BadRequestException(`Telegram: ${err instanceof Error ? err.message : 'failed'}`);
     }
-    return { ok: true };
+    // Re-register so the Approve/Reject buttons work (also repairs a changed APP_URL).
+    const hook = await this.telegram.registerWebhook(brand);
+    return { ok: true, buttons: hook.ok, buttonsMessage: hook.message };
   }
 
   private async assertSlugFree(slug: string) {
@@ -431,13 +475,13 @@ export class BrandsService {
 export function parsePlans(json: string): RenewalPlan[] {
   try {
     const arr = JSON.parse(json) as unknown;
-    return Array.isArray(arr) ? cleanPlans(arr as RenewalPlan[]) : [];
+    return Array.isArray(arr) ? cleanPlans(arr as PlanInput[]) : [];
   } catch {
     return [];
   }
 }
 
-function cleanPlans(plans: RenewalPlan[]): RenewalPlan[] {
+function cleanPlans(plans: PlanInput[]): RenewalPlan[] {
   return plans
     .filter((p) => p && typeof p.title === 'string' && p.title.trim())
     .slice(0, 12)
@@ -447,6 +491,8 @@ function cleanPlans(plans: RenewalPlan[]): RenewalPlan[] {
       days: Math.max(0, Math.min(3650, Math.round(Number(p.days) || 0))),
       gb: Math.max(0, Math.min(100_000, Number(p.gb) || 0)),
       price: String(p.price ?? '').trim().slice(0, 40),
+      users: Math.max(0, Math.min(20, Math.round(Number(p.users) || 0))),
+      mode: p.mode === 'reset' ? 'reset' : 'add',
     }));
 }
 

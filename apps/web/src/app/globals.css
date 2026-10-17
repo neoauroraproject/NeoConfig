@@ -81,6 +81,17 @@ body {
   min-height: 100%;
 }
 
+/* Desktop: the phone-width app floats on a soft brand-tinted backdrop instead of a flat canvas. */
+@media (min-width: 640px) {
+  .sf-root {
+    background:
+      radial-gradient(60vw 60vh at 15% 10%, color-mix(in srgb, var(--brand) 16%, transparent), transparent 70%),
+      radial-gradient(50vw 55vh at 85% 90%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%),
+      var(--canvas);
+    background-attachment: fixed;
+  }
+}
+
 body {
   font-family: 'Vazirmatn', Tahoma, system-ui, sans-serif;
   line-height: 1.7;

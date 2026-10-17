@@ -221,7 +221,7 @@ function BrandEditor({
       setDraft(next);
       setSaved(true);
     } catch (e) {
-      setError(errMsg(e));
+      setError(friendlySaveError(errMsg(e)));
     } finally {
       setSaving(false);
     }
@@ -298,7 +298,17 @@ function BrandEditor({
             ))}
           </div>
 
-          {tab === 'look' && <LookTab draft={draft} set={set} />}
+          {tab === 'look' && (
+            <LookTab
+              draft={draft}
+              set={set}
+              brandId={brand.id}
+              onLogo={(b) => {
+                onChange(b);
+                setDraft((d) => ({ ...d, logoUrl: b.logoUrl }));
+              }}
+            />
+          )}
           {tab === 'domains' && <DomainsTab brand={brand} draft={draft} set={set} isAdmin={isAdmin} onChange={(b) => { onChange(b); setDraft((d) => ({ ...d, domains: b.domains })); }} />}
           {tab === 'renewal' && <RenewalTab draft={draft} set={set} />}
           {tab === 'access' && isAdmin && <AccessTab draft={draft} set={set} onDeleted={onDeleted} />}
@@ -325,9 +335,19 @@ function BrandEditor({
   );
 }
 
+/** Validation messages come from the API in English; say what to fix instead. */
+function friendlySaveError(msg: string) {
+  if (/plans\.\d+\.(days|gb)/.test(msg)) return 'در پلن‌ها، «روز» و «گیگ» باید عدد باشند.';
+  if (/plans\.\d+\.title/.test(msg)) return 'هر پلن عنوان لازم دارد.';
+  if (/plans\.\d+\.price/.test(msg)) return 'هر پلن قیمت لازم دارد.';
+  if (/address is already in use|slug/i.test(msg)) return 'این آدرس کوتاه قبلاً استفاده شده است.';
+  if (/Telegram bot token/i.test(msg)) return 'توکن ربات تلگرام درست نیست؛ از @BotFather کپی کنید.';
+  return `ذخیره نشد: ${msg}`;
+}
+
 type SetFn = <K extends keyof AdminBrand>(k: K, v: AdminBrand[K]) => void;
 
-function LookTab({ draft, set }: { draft: AdminBrand; set: SetFn }) {
+function LookTab({ draft, set, brandId, onLogo }: { draft: AdminBrand; set: SetFn; brandId: string; onLogo: (b: AdminBrand) => void }) {
   return (
     <div className="space-y-3">
       <Card>
@@ -342,9 +362,7 @@ function LookTab({ draft, set }: { draft: AdminBrand; set: SetFn }) {
           <Field label="جملهٔ بالای صفحهٔ ورود" htmlFor="b-tag" hint="خالی بماند: «وضعیت سرویس، همیشه دم دست»">
             <input id="b-tag" className="field" value={draft.tagline ?? ''} onChange={(e) => set('tagline', e.target.value)} />
           </Field>
-          <Field label="آدرس لوگو" htmlFor="b-logo" hint="تصویر مربعی؛ خالی بماند، نشان حلقه‌ای با رنگ برند ساخته می‌شود">
-            <input id="b-logo" dir="ltr" className="field" value={draft.logoUrl ?? ''} onChange={(e) => set('logoUrl', e.target.value)} placeholder="https://" />
-          </Field>
+          <LogoField brandId={brandId} value={draft.logoUrl} onSaved={onLogo} />
         </div>
       </Card>
       <Card>
@@ -393,6 +411,52 @@ function LookTab({ draft, set }: { draft: AdminBrand; set: SetFn }) {
         </div>
       </Card>
     </div>
+  );
+}
+
+/** Uploads immediately (resized to 256px) — the logo is not part of the draft save. */
+function LogoField({ brandId, value, onSaved }: { brandId: string; value: string | null; onSaved: (b: AdminBrand) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function pick(file: File | undefined) {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const bitmap = await createImageBitmap(file);
+      const size = 256;
+      const scale = Math.min(1, size / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(bitmap.width * scale);
+      canvas.height = Math.round(bitmap.height * scale);
+      canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      onSaved(await adminApi.uploadLogo(brandId, canvas.toDataURL('image/png')));
+    } catch (e) {
+      setError(e instanceof Error && e.message !== 'network' ? errMsg(e) : 'این فایل تصویر قابل خواندن نیست');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Field label="لوگو" htmlFor="b-logo" hint="PNG، JPG یا WebP؛ مربعی بهتر است. خالی بماند، نشان حلقه‌ای با رنگ برند ساخته می‌شود." error={error}>
+      <div className="flex items-center gap-3">
+        <span className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface-2)]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {value ? <img src={value} alt="لوگوی فعلی" className="h-full w-full object-cover" /> : <span className="text-xs text-[var(--ink-3)]">ندارد</span>}
+        </span>
+        <input id="b-logo" type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(e) => pick(e.target.files?.[0])} />
+        <label htmlFor="b-logo" className="inline-flex h-10 cursor-pointer items-center rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 text-sm">
+          {busy ? 'در حال آپلود…' : value ? 'تغییر لوگو' : 'آپلود لوگو'}
+        </label>
+        {value && !busy && (
+          <Button variant="ghost" onClick={async () => onSaved(await adminApi.removeLogo(brandId))}>
+            حذف
+          </Button>
+        )}
+      </div>
+    </Field>
   );
 }
 
@@ -502,15 +566,37 @@ function DomainsTab({
   );
 }
 
+const USER_OPTIONS = [
+  { v: 0, label: 'بدون تغییر' },
+  { v: 1, label: 'تک‌کاربره' },
+  { v: 2, label: 'دوکاربره' },
+  { v: 3, label: '۳ کاربره' },
+  { v: 4, label: '۴ کاربره' },
+  { v: 5, label: '۵ کاربره' },
+];
+
 function RenewalTab({ draft, set }: { draft: AdminBrand; set: SetFn }) {
   const plans = draft.plans;
   const update = (i: number, patch: Partial<RenewalPlan>) => set('plans', plans.map((p, j) => (j === i ? { ...p, ...patch } : p)));
-  const ready = draft.cardNumber && plans.length > 0;
+  const num = (v: string) => (v === '' ? 0 : Math.max(0, Number(v) || 0));
+  const usable = plans.filter((p) => p.title.trim() && p.price.trim());
+  const missing = [
+    !draft.renewalEnabled && 'روشن کردن تمدید',
+    !(draft.cardNumber && draft.cardNumber.replace(/\D/g, '').length >= 16) && 'شماره کارت ۱۶ رقمی',
+    usable.length === 0 && 'حداقل یک پلن با عنوان و قیمت',
+  ].filter(Boolean) as string[];
   return (
     <div className="space-y-3">
+      <div
+        className={`rounded-2xl border px-4 py-3 text-sm ${missing.length ? 'border-[#f2c48d] bg-[#fff7ec] text-[#7a4a0b]' : 'border-[#bfe7cf] bg-[#effaf3] text-[#1d6b41]'}`}
+        role="status"
+      >
+        {missing.length
+          ? `دکمهٔ «تمدید» در اپ کاربر هنوز نمایش داده نمی‌شود. لازم است: ${missing.join('، ')} — و بعد «ذخیره تغییرات».`
+          : 'دکمهٔ «تمدید» در اپ کاربر نمایش داده می‌شود (بعد از ذخیره).'}
+      </div>
       <Card>
         <Toggle id="r-on" label="تمدید با کارت به کارت در اپ کاربر" checked={draft.renewalEnabled} onChange={(v) => set('renewalEnabled', v)} />
-        {draft.renewalEnabled && !ready && <p className="mt-2 text-xs text-[#b06d0b]">برای نمایش در اپ، شماره کارت و حداقل یک پلن لازم است.</p>}
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <Field label="شماره کارت" htmlFor="r-card">
             <input id="r-card" dir="ltr" inputMode="numeric" className="field num" value={draft.cardNumber ?? ''} onChange={(e) => set('cardNumber', e.target.value.replace(/[^\d ]/g, ''))} placeholder="6037 ...." />
@@ -531,30 +617,52 @@ function RenewalTab({ draft, set }: { draft: AdminBrand; set: SetFn }) {
           <h2 className="font-medium">پلن‌ها</h2>
           <Button
             variant="secondary"
-            onClick={() => set('plans', [...plans, { id: `p${Date.now().toString(36)}`, title: '', days: 30, gb: 50, price: '' }])}
+            onClick={() =>
+              set('plans', [...plans, { id: `p${Date.now().toString(36)}`, title: '', days: 30, gb: 50, price: '', users: 1, mode: 'add' }])
+            }
             disabled={plans.length >= 12}
           >
             <Plus className="h-4 w-4" /> پلن جدید
           </Button>
         </div>
-        <p className="mb-3 text-xs leading-6 text-[var(--ink-3)]">
-          با تأیید و «تمدید خودکار»، انقضا به اندازهٔ روزهای پلن جلو می‌رود، حجم روی مقدار پلن تنظیم و مصرف صفر می‌شود. حجم ۰ یعنی نامحدود.
+        <p className="mb-3 text-xs leading-7 text-[var(--ink-3)]">
+          <b>افزودن به سرویس:</b> روزها به انقضای فعلی و گیگ‌ها به حجم فعلی اضافه می‌شوند و مصرف می‌ماند (سرویس نامحدود، نامحدود می‌ماند).{' '}
+          <b>دورهٔ جدید:</b> حجم روی مقدار پلن تنظیم و مصرف صفر می‌شود؛ گیگ ۰ یعنی نامحدود. «کاربر مجاز» تعداد اتصال هم‌زمان را روی پنل تنظیم می‌کند.
         </p>
         <div className="space-y-2">
           {plans.map((p, i) => (
-            <div key={p.id} className="grid grid-cols-2 gap-2 rounded-xl bg-[var(--surface-2)] p-3 sm:grid-cols-[2fr_1fr_1fr_1.4fr_auto] sm:items-end">
-              <Field label="عنوان" htmlFor={`pl-t-${i}`}>
-                <input id={`pl-t-${i}`} className="field" value={p.title} onChange={(e) => update(i, { title: e.target.value })} placeholder="یک‌ماهه ۵۰ گیگ" />
-              </Field>
+            <div key={p.id} className="grid grid-cols-2 gap-2 rounded-xl bg-[var(--surface-2)] p-3 sm:grid-cols-6 sm:items-end">
+              <div className="col-span-2">
+                <Field label="عنوان" htmlFor={`pl-t-${i}`}>
+                  <input id={`pl-t-${i}`} className="field" value={p.title} onChange={(e) => update(i, { title: e.target.value })} placeholder="یک‌ماهه ۵۰ گیگ تک‌کاربره" />
+                </Field>
+              </div>
               <Field label="روز" htmlFor={`pl-d-${i}`}>
-                <input id={`pl-d-${i}`} type="number" min={0} dir="ltr" className="field" value={p.days} onChange={(e) => update(i, { days: Number(e.target.value) })} />
+                <input id={`pl-d-${i}`} type="number" min={0} dir="ltr" className="field" value={p.days || ''} placeholder="0" onChange={(e) => update(i, { days: num(e.target.value) })} />
               </Field>
               <Field label="گیگ" htmlFor={`pl-g-${i}`}>
-                <input id={`pl-g-${i}`} type="number" min={0} step="any" dir="ltr" className="field" value={p.gb} onChange={(e) => update(i, { gb: Number(e.target.value) })} />
+                <input id={`pl-g-${i}`} type="number" min={0} step="any" dir="ltr" className="field" value={p.gb || ''} placeholder="0" onChange={(e) => update(i, { gb: num(e.target.value) })} />
               </Field>
-              <Field label="قیمت" htmlFor={`pl-p-${i}`}>
-                <input id={`pl-p-${i}`} className="field" value={p.price} onChange={(e) => update(i, { price: e.target.value })} placeholder="۱۵۰٬۰۰۰ تومان" />
+              <Field label="کاربر مجاز" htmlFor={`pl-u-${i}`}>
+                <select id={`pl-u-${i}`} className="field" value={p.users ?? 0} onChange={(e) => update(i, { users: Number(e.target.value) })}>
+                  {USER_OPTIONS.map((o) => (
+                    <option key={o.v} value={o.v}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
               </Field>
+              <Field label="نوع تمدید" htmlFor={`pl-m-${i}`}>
+                <select id={`pl-m-${i}`} className="field" value={p.mode ?? 'add'} onChange={(e) => update(i, { mode: e.target.value as 'add' | 'reset' })}>
+                  <option value="add">افزودن به سرویس</option>
+                  <option value="reset">دورهٔ جدید</option>
+                </select>
+              </Field>
+              <div className="col-span-2 sm:col-span-5">
+                <Field label="قیمت" htmlFor={`pl-p-${i}`}>
+                  <input id={`pl-p-${i}`} className="field" value={p.price} onChange={(e) => update(i, { price: e.target.value })} placeholder="۱۵۰٬۰۰۰ تومان" />
+                </Field>
+              </div>
               <Button variant="ghost" aria-label={`حذف پلن ${p.title}`} className="!px-3" onClick={() => set('plans', plans.filter((_, j) => j !== i))}>
                 <Trash2 className="h-4 w-4" />
               </Button>
@@ -686,8 +794,13 @@ function TelegramCard({ brand, onSaved }: { brand: AdminBrand; onSaved: (b: Admi
     setBusy('test');
     setMsg(null);
     try {
-      await adminApi.telegramTest(brand.id);
-      setMsg({ ok: true, text: 'پیام آزمایشی ارسال شد؛ تلگرام را چک کن.' });
+      const r = await adminApi.telegramTest(brand.id);
+      setMsg({
+        ok: true,
+        text: r.buttons
+          ? 'پیام آزمایشی ارسال شد. دکمه‌های تأیید/رد زیر رسیدها فعال است.'
+          : `پیام آزمایشی ارسال شد، ولی دکمه‌های تأیید/رد فعال نشد: ${r.buttonsMessage ?? ''}`,
+      });
     } catch (e) {
       setMsg({ ok: false, text: errMsg(e) });
     } finally {
@@ -702,7 +815,7 @@ function TelegramCard({ brand, onSaved }: { brand: AdminBrand; onSaved: (b: Admi
         <StatusDot ok={brand.telegramConfigured ? true : null} />
       </div>
       <p className="mt-1 text-sm leading-7 text-[var(--ink-2)]">
-        هر رسید تازه همراه تصویرش، و هر تأیید یا رد، به این گروه یا کانال فرستاده می‌شود. با @BotFather ربات بساز، به گروه اضافه‌اش کن و آیدی گروه را بنویس.
+        هر رسید تازه همراه تصویرش و دو دکمهٔ «تأیید و تمدید» و «رد» به این گروه فرستاده می‌شود؛ با زدن دکمه، تمدید همان‌جا انجام می‌شود. با @BotFather ربات بساز، به گروه اضافه‌اش کن و آیدی گروه را بنویس.
       </p>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <Field label="توکن ربات" htmlFor="tg-token" hint={brand.telegramConfigured ? 'ذخیره شده؛ برای تغییر، توکن جدید بنویس' : 'از @BotFather'}>

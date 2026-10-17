@@ -3,7 +3,8 @@
 import { motion } from 'framer-motion';
 import { Bell, Check, Copy, ImagePlus, Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { ApiError, PublicRenewal, publicApi } from '@/lib/api';
+import { ApiError, PublicRenewal, RenewalPlan, publicApi } from '@/lib/api';
+import type { DictKey } from '@/lib/i18n';
 import { groupCard } from '@/lib/format';
 import type { PushState } from '@/lib/push';
 import { currentEndpoint } from '@/lib/push';
@@ -112,19 +113,7 @@ export function RenewSheet({
                   <span className="min-w-0 flex-1">
                     <span className="block text-[15px] font-medium">{p.title}</span>
                     <span className={`mt-0.5 block text-xs ${selected ? 'opacity-70' : 'text-ink-2'}`}>
-                      {p.days > 0 && (
-                        <>
-                          <span className="num">{p.days}</span> {t('days')}
-                        </>
-                      )}
-                      {p.days > 0 && ' · '}
-                      {p.gb > 0 ? (
-                        <>
-                          <span className="num">{p.gb}</span> {t('gb')}
-                        </>
-                      ) : (
-                        t('unlimited')
-                      )}
+                      {planSummary(p, t)}
                     </span>
                   </span>
                   <span className="text-sm font-semibold">{p.price}</span>
@@ -293,6 +282,16 @@ export function RenewSheet({
       )}
     </Sheet>
   );
+}
+
+function planSummary(p: RenewalPlan, t: (k: DictKey) => string) {
+  const parts: string[] = [];
+  if (p.days > 0) parts.push(`+${p.days} ${t('days')}`);
+  if (p.mode === 'reset') parts.push(p.gb > 0 ? `${p.gb} ${t('gb')}` : t('unlimited'));
+  else if (p.gb > 0) parts.push(`+${p.gb} ${t('gb')}`);
+  if (p.users === 1) parts.push(t('singleUser'));
+  else if (p.users > 1) parts.push(`${p.users} ${t('usersCount')}`);
+  return parts.join(' · ');
 }
 
 /** Downscale phone screenshots so uploads stay small on slow mobile data. */

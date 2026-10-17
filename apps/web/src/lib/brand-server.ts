@@ -23,8 +23,9 @@ export const FALLBACK_BRAND: Branding = {
 
 export async function fetchBrand(tenant: string): Promise<Branding> {
   try {
+    // Always fresh: admins expect a saved change to show on the next page load.
     const res = await fetch(`${INTERNAL}/api/v1/public/branding?tenant=${encodeURIComponent(tenant)}`, {
-      next: { revalidate: 30 },
+      cache: 'no-store',
     });
     if (!res.ok) return FALLBACK_BRAND;
     return (await res.json()) as Branding;

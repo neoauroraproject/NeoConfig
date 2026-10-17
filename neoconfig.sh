@@ -41,6 +41,16 @@ version() {
   echo "${rev:-$(git rev-parse --short HEAD 2>/dev/null)}"
 }
 
+wait_healthy() {
+  info "Waiting for the API (migrations run on start)…"
+  for _ in $(seq 1 40); do
+    [[ "$(docker inspect --format '{{.State.Health.Status}}' neoconfig-api-1 2>/dev/null)" == "healthy" ]] && { ok "API is up"; return 0; }
+    sleep 3
+  done
+  warn "API is not healthy yet — check: neoconfig logs api"
+  return 1
+}
+
 cmd_status() {
   echo -e "${BOLD}NeoConfig${NC} $(version) · ${DIM}$INSTALL_DIR${NC}"
   echo -e "Domain: ${BOLD}$(env_get PRIMARY_DOMAIN)${NC}"
@@ -73,6 +83,7 @@ cmd_update() {
     compose pull -q
     compose up -d
   fi
+  wait_healthy
   docker image prune -f >/dev/null 2>&1 || true
   local after; after=$(version)
   if [[ "$before" == "$after" ]]; then ok "Already up to date ($after)"; else ok "Updated $before → $after"; fi
@@ -151,15 +162,24 @@ cmd_doctor() {
     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 -H "Host: $domain" http://127.0.0.1/ || true)
     [[ "$code" == 30* ]] && ok "Proxy answers locally (HTTP $code → HTTPS)" || { warn "Proxy did not answer locally on port 80 (got ${code:-nothing})"; bad=1; }
     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://$domain/api/v1/health" || true)
-    [[ "$code" == 200 ]] && ok "https://$domain works" || { warn "https://$domain not reachable yet (got ${code:-no answer})"; bad=1; }
+    if [[ "$code" == 200 ]]; then ok "https://$domain works"
+    elif [[ "$code" == 502 || "$code" == 503 ]]; then
+      ok "SSL certificate is in place (HTTPS answered)"
+      warn "…but the app behind it is not up (HTTP $code). Container state:"
+      compose ps --format 'table {{.Service}}	{{.State}}	{{.Status}}'
+      echo -e "
+${BOLD}Last API log lines:${NC}"
+      compose logs --no-color --tail 25 api 2>/dev/null | sed 's/^/  /'
+      echo -e "${DIM}Right after an update the API needs ~40s for migrations — run 'neoconfig doctor' again in a minute.${NC}"
+      bad=1
+    else warn "https://$domain not reachable yet (got ${code:-no answer})"; bad=1
+    fi
   fi
 
   echo -e "\n${BOLD}Certificate log (last lines):${NC}"
   compose logs --no-color proxy 2>/dev/null | grep -iE 'certificate obtained|obtain|acme|challenge|error|failed' | tail -n 12 || true
   echo
-  if [[ $bad -eq 0 ]]; then ok "All checks passed."; else
-    echo -e "${DIM}If DNS and ports look right but HTTPS still fails, the provider's firewall (cloud panel / security group) is likely blocking 80/443 from outside.${NC}"
-  fi
+  if [[ $bad -eq 0 ]]; then ok "All checks passed."; fi
 }
 
 cmd_backup() {

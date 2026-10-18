@@ -28,6 +28,15 @@ class CreateRenewalDto {
   @IsOptional() @IsString() @MaxLength(1024) deviceEndpoint?: string;
 }
 
+class CreatePurchaseDto {
+  @IsOptional() @IsString() tenant?: string;
+  @IsString() @MaxLength(24) planId!: string;
+  @IsString() @MaxLength(4_500_000) receipt!: string;
+  @IsOptional() @IsString() @MaxLength(80) payerName?: string;
+  @IsOptional() @IsString() @MaxLength(300) payerNote?: string;
+  @IsOptional() @IsString() @MaxLength(1024) deviceEndpoint?: string;
+}
+
 class StatusDto {
   @IsArray() @ArrayMaxSize(30) @IsString({ each: true }) ids!: string[];
 }
@@ -47,6 +56,12 @@ export class RenewalsController {
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   create(@Body() body: CreateRenewalDto) {
     return this.renewals.create(body);
+  }
+
+  @Post('public/purchases')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  purchase(@Body() body: CreatePurchaseDto) {
+    return this.renewals.createPurchase(body);
   }
 
   @Post('public/renewals/status')

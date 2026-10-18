@@ -199,6 +199,7 @@ function BrandEditor({
         cardFromPanel: draft.cardFromPanel ?? false,
         hmCardId: draft.hmCardId ?? null,
         plansSync: draft.plansSync ?? false,
+        purchaseEnabled: draft.purchaseEnabled ?? false,
         defaultLocale: draft.defaultLocale,
         supportUrl: draft.supportUrl ?? '',
         supportTelegram: draft.supportTelegram ?? '',

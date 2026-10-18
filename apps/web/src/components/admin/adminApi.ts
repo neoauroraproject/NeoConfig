@@ -19,6 +19,7 @@ export type AdminBrand = {
   cardFromPanel: boolean;
   hmCardId: string | null;
   plansSync: boolean;
+  purchaseEnabled: boolean;
   defaultLocale: string;
   supportUrl: string | null;
   supportTelegram: string | null;
@@ -111,6 +112,7 @@ export type AdminRenewal = {
   adminNote: string | null;
   canApply: boolean;
   via: 'local' | 'hmpanel';
+  kind: 'renewal' | 'purchase';
   externalCode: string | null;
   appliedOnPanel: boolean | null;
   applyMessage: string | null;

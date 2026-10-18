@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { ArrowUpLeft, ArrowUpRight, ClipboardPaste, Download, Loader2 } from 'lucide-react';
+import { ArrowUpLeft, ArrowUpRight, ClipboardPaste, Download, Loader2, ShoppingBag } from 'lucide-react';
 import { FormEvent, useEffect, useState } from 'react';
 import { BrandMark } from './BrandMark';
 import { useSf } from './context';
@@ -13,9 +13,10 @@ type Props = {
   canInstall: boolean;
   onInstall: () => void;
   onCancel?: () => void;
+  onBuy?: () => void;
 };
 
-export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCancel }: Props) {
+export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCancel, onBuy }: Props) {
   const { brand, t, locale } = useSf();
   const [url, setUrl] = useState('');
   const [canPaste, setCanPaste] = useState(false);
@@ -135,6 +136,16 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
             {error}
           </p>
         </form>
+        {onBuy && (
+          <button
+            type="button"
+            onClick={onBuy}
+            className="mt-1 flex h-12 w-full items-center justify-center gap-2 rounded-3xl border border-line text-sm font-medium text-ink"
+          >
+            <ShoppingBag className="h-4 w-4" />
+            {t('buyNew')}
+          </button>
+        )}
       </div>
       </div>
       <Showcase />

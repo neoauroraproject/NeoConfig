@@ -128,6 +128,8 @@ model Brand {
   hmCardId        String?
   /// Keep linked plans' days, data and price in step with HMPanel products
   plansSync       Boolean @default(false)
+  /// Customers can buy a new service in the app (through the HMPanel store)
+  purchaseEnabled Boolean @default(false)
   /// Extra themes the customer may switch to in the app menu
   themeChoices    String[] @default([])
   defaultLocale   String  @default("fa")
@@ -341,6 +343,10 @@ model RenewalRequest {
   payerNote      String?
   receiptMime    String
   receiptData    Bytes
+  /// renewal | purchase (a new service bought in the app)
+  kind             String    @default("renewal")
+  /// Purchases: the delivered subscription link (encrypted)
+  resultUrlEnc     String?
   /// HMPanel store order when the brand renews through HMPanel
   externalOrderId  String?
   externalCode     String?

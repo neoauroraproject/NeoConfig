@@ -22,6 +22,7 @@ import { Dashboard } from './Dashboard';
 import { Onboarding } from './Onboarding';
 import { PullToRefresh } from './PullToRefresh';
 import { Intro } from './Intro';
+import { RenewalDetailSheet } from './RenewalDetailSheet';
 import { RenewSheet } from './RenewSheet';
 import { AccountsSheet, InstallIosSheet, MenuSheet, QrSheet } from './Sheets';
 import { AppsSheet, InfoSheet } from './InfoSheets';
@@ -32,7 +33,7 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
-type SheetName = 'accounts' | 'menu' | 'qr' | 'renew' | 'install' | 'apps' | 'info' | null;
+type SheetName = 'accounts' | 'menu' | 'qr' | 'renew' | 'purchase' | 'install' | 'apps' | 'info' | null;
 
 export function Storefront({ brand, tenant, demo = false }: { brand: Branding; tenant: string; demo?: boolean }) {
   const storeKey = demo ? `demo.${tenant}` : tenant;
@@ -52,6 +53,7 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
   const [standalone, setStandalone] = useState(true);
   const [push, setPush] = useState<PushState>('unsupported');
   const [showIntro, setShowIntro] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [tracked, setTracked] = useState<TrackedRenewal[]>([]);
   const [renewals, setRenewals] = useState<PublicRenewal[]>([]);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -82,7 +84,15 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
     }
     const s = loadAccounts(storeKey);
     setState(s);
-    setTracked(loadRenewals(storeKey));
+    // A push about a renewal opens its details (and makes sure it is followed).
+    const fromPush = new URLSearchParams(location.search).get('renewal');
+    const known = loadRenewals(storeKey);
+    if (fromPush && /^[a-z0-9]{10,40}$/.test(fromPush)) {
+      if (!known.some((r) => r.id === fromPush)) known.push({ id: fromPush, accountId: s.activeId ?? 'new' });
+      setDetailId(fromPush);
+      history.replaceState(null, '', location.pathname);
+    }
+    setTracked(known);
     setReady(true);
     setStandalone(isStandalone());
     if (!demo && 'serviceWorker' in navigator) {
@@ -147,6 +157,7 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
               toast(`${t('approved')} ✓`);
             }
             seenStatus.current[r.id] = r.status;
+            if (r.kind === 'purchase' && r.status === 'approved' && r.subscriptionUrl) void adoptPurchase(r.id, r.subscriptionUrl);
           }
           setRenewals(rows);
         })
@@ -169,6 +180,29 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
 
   async function lookup(url: string): Promise<LookupResponse> {
     return demo ? demoLookup(url) : publicApi.lookup(url, tenant);
+  }
+
+  /** A bought service was delivered: add it to this device once, and follow it for reminders. */
+  async function adoptPurchase(id: string, url: string) {
+    const key = `nc.purchases.done.${storeKey}`;
+    let done: string[] = [];
+    try {
+      done = JSON.parse(localStorage.getItem(key) || '[]') as string[];
+    } catch {
+      /* ignore */
+    }
+    if (done.includes(id)) return;
+    try {
+      const res = await lookup(url);
+      const next = upsertAccount(stateRef.current, url, res);
+      persist(next);
+      void syncPush(tenant, followsOf(next.accounts));
+      localStorage.setItem(key, JSON.stringify([...done, id].slice(-50)));
+      setAdding(false);
+      toast(t('newServiceAdded'));
+    } catch {
+      /* try again on the next status poll */
+    }
   }
 
   /** Background sync of one account: no spinner, no toast, keeps the last data on failure. */
@@ -368,13 +402,19 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
   const ctx = { brand: shown, tenant, locale, t, toast, preview: demo };
   const canInstall = !standalone && (Boolean(installEvt) || isIosSafe());
   // Pending requests stay visible; decided ones show for three days.
+  const recent = (r: PublicRenewal) => r.status === 'pending' || Date.now() - new Date(r.decidedAt ?? r.createdAt).getTime() < 3 * 86_400_000;
   const accountRenewals = active
     ? renewals.filter(
         (r) =>
-          (r.subId === active.id || tracked.some((x) => x.id === r.id && x.accountId === active.id)) &&
-          (r.status === 'pending' || Date.now() - new Date(r.decidedAt ?? r.createdAt).getTime() < 3 * 86_400_000),
+          (r.kind === 'purchase' || r.subId === active.id || tracked.some((x) => x.id === r.id && x.accountId === active.id)) && recent(r),
       )
     : [];
+  const detail = renewals.find((r) => r.id === detailId) ?? null;
+  const trackNew = (r: PublicRenewal, accountId: string) => {
+    const next = [...tracked, { id: r.id, accountId }];
+    setTracked(next);
+    saveRenewals(storeKey, next);
+  };
 
   return (
     <SfContext.Provider value={ctx}>
@@ -390,6 +430,7 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
               canInstall={canInstall}
               onInstall={install}
               onCancel={adding && active ? () => (setAdding(false), setError(null)) : undefined}
+              onBuy={brand.purchase ? () => setSheet('purchase') : undefined}
             />
           </div>
         ) : (
@@ -399,6 +440,7 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
             accountCount={state.accounts.length}
             refreshing={refreshing}
             renewals={accountRenewals}
+            onRenewalOpen={setDetailId}
             onRefresh={refreshActive}
             onApps={() => setSheet('apps')}
             onInfo={() => setSheet('info')}
@@ -450,14 +492,28 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
               serviceKind={active.serviceKind}
               push={push}
               onEnablePush={togglePush}
-              onSubmitted={(r) => {
-                const next = [...tracked, { id: r.id, accountId: active.id }];
-                setTracked(next);
-                saveRenewals(storeKey, next);
-              }}
+              onSubmitted={(r) => trackNew(r, active.id)}
             />
           </>
         )}
+        {brand.purchase && (
+          <RenewSheet
+            mode="purchase"
+            open={sheet === 'purchase'}
+            onClose={() => setSheet(null)}
+            push={push}
+            onEnablePush={togglePush}
+            onSubmitted={(r) => trackNew(r, 'new')}
+          />
+        )}
+        <RenewalDetailSheet
+          renewal={detail}
+          onClose={() => setDetailId(null)}
+          onRetry={(r) => {
+            setDetailId(null);
+            setSheet(r.kind === 'purchase' ? 'purchase' : 'renew');
+          }}
+        />
         <MenuSheet
           open={sheet === 'menu'}
           onClose={() => setSheet(null)}
@@ -468,6 +524,13 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
           theme={theme}
           themes={themes}
           onTheme={changeTheme}
+          onBuy={
+            brand.purchase
+              ? () => {
+                  setSheet('purchase');
+                }
+              : undefined
+          }
         />
         <InstallIosSheet open={sheet === 'install'} onClose={() => setSheet(null)} />
 

@@ -66,6 +66,7 @@ export interface HmPanelOrder {
   rejectReason?: string | null;
   provisionError?: string | null;
   payment?: { rejectReason?: string | null } | null;
+  subscriptionUrl?: string | null;
 }
 
 /** Store order states that mean the renewal went through / was refused. */
@@ -185,8 +186,9 @@ export class HmPanelClientService {
       paymentMethod: 'MANUAL_BANK';
       receiptText?: string;
       receiptImage: string;
-      isRenewal: true;
-      renewClientId: string;
+      isRenewal: boolean;
+      renewClientId?: string;
+      configName?: string;
       limitIp?: number;
     },
   ) {

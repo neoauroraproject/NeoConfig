@@ -34,6 +34,7 @@ type Props = {
   onInfo: () => void;
   onQr: () => void;
   onRenew: () => void;
+  onRenewalOpen?: (id: string) => void;
   onAccounts: () => void;
   onAdd: () => void;
   onMenu: () => void;
@@ -150,7 +151,7 @@ export function Dashboard(p: Props) {
         )}
       </nav>
 
-      {p.renewals.length > 0 && <RenewalStrip renewals={p.renewals} />}
+      {p.renewals.length > 0 && <RenewalStrip renewals={p.renewals} onOpen={p.onRenewalOpen} />}
       </div>
 
       <div>
@@ -436,20 +437,37 @@ function RoundAction({
   );
 }
 
-function RenewalStrip({ renewals }: { renewals: PublicRenewal[] }) {
-  const { t } = useSf();
-  const r = renewals[0];
-  const tone = r.status === 'approved' ? '#1fa66a' : r.status === 'rejected' ? '#d4373f' : '#e59a12';
+function RenewalStrip({ renewals, onOpen }: { renewals: PublicRenewal[]; onOpen?: (id: string) => void }) {
+  const { t, locale } = useSf();
   return (
-    <div className="mt-6 flex items-center gap-3 rounded-3xl bg-surface px-4 py-3.5 shadow-raise-sm">
-      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: tone }} />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-ink">{r.planTitle}</p>
-        <p className="truncate text-xs text-ink-2">
-          {t(r.status)}
-          {r.adminNote ? ` — ${r.adminNote}` : ''}
-        </p>
-      </div>
+    <div className="mt-6 space-y-2">
+      {renewals.slice(0, 3).map((r) => {
+        const tone = r.status === 'approved' ? '#1fa66a' : r.status === 'rejected' ? '#d4373f' : '#e59a12';
+        return (
+          <button
+            key={r.id}
+            type="button"
+            onClick={() => onOpen?.(r.id)}
+            className="flex w-full items-center gap-3 rounded-3xl bg-surface px-4 py-3.5 text-start shadow-raise-sm"
+          >
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: tone }} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-ink">
+                {r.kind === 'purchase' ? `${t('buyNew')} · ` : ''}
+                {r.planTitle}
+              </span>
+              <span className="block truncate text-xs text-ink-2">
+                {t(r.status)}
+                {r.adminNote ? ` — ${r.adminNote}` : ''}
+              </span>
+            </span>
+            <span className="shrink-0 text-xs font-medium" style={{ color: tone }}>
+              {t('details')}
+            </span>
+            {locale === 'fa' ? <ChevronLeft className="h-4 w-4 text-ink-3" /> : <ChevronRight className="h-4 w-4 text-ink-3" />}
+          </button>
+        );
+      })}
     </div>
   );
 }

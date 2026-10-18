@@ -21,14 +21,16 @@ export default async function DemoPage({ searchParams }: Props) {
     ...brand,
     theme: THEME_IDS.includes(theme as ThemeId) ? (theme as ThemeId) : brand.theme,
     themes: [...THEME_IDS],
+    purchase: true,
     renewal: brand.renewal ?? {
       cardNumber: '6037991234567890',
       cardHolder: 'نمونه',
       bankName: 'بانک ملی',
       note: null,
       plans: [
-        { id: 'p1', title: 'یک‌ماهه ۵۰ گیگ تک‌کاربره', days: 30, gb: 50, price: '۱۵۰٬۰۰۰ تومان', users: 1, mode: 'add' },
-        { id: 'p2', title: 'سه‌ماهه ۱۵۰ گیگ دوکاربره', days: 90, gb: 150, price: '۴۲۰٬۰۰۰ تومان', users: 2, mode: 'add' },
+        { id: 'p1', title: 'یک‌ماهه ۵۰ گیگ تک‌کاربره', days: 30, gb: 50, price: '۱۵۰٬۰۰۰ تومان', users: 1, mode: 'add', productId: 'd1', service: 'xui', category: 'آلمان' },
+        { id: 'p2', title: 'سه‌ماهه ۱۵۰ گیگ دوکاربره', days: 90, gb: 150, price: '۴۲۰٬۰۰۰ تومان', users: 2, mode: 'add', productId: 'd2', service: 'xui', category: 'آلمان' },
+        { id: 'p3', title: 'یک‌ماهه نامحدود', days: 30, gb: 0, price: '۲۲۰٬۰۰۰ تومان', users: 1, mode: 'reset', productId: 'd3', service: 'pasarguard' },
       ],
     },
   };

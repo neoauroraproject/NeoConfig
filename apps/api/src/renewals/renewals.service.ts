@@ -153,8 +153,15 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
         }
         return this.toPublic(updated);
       } catch (err) {
-        await this.prisma.renewalRequest.delete({ where: { id: row.id } }).catch(() => undefined);
-        throw new BadRequestException(hmError(err));
+        if (!storeCannotRenew(err)) {
+          await this.prisma.renewalRequest.delete({ where: { id: row.id } }).catch(() => undefined);
+          throw new BadRequestException(hmError(err));
+        }
+        // The store only renews services it sold to its own admin. Review it here instead;
+        // approval still renews through HMPanel's client API (same admin credit, same inbounds).
+        await this.prisma.renewalRequest
+          .update({ where: { id: row.id }, data: { applyMessage: `HMPanel store: ${hmError(err)} — reviewed in NeoConfig` } })
+          .catch(() => undefined);
       }
     }
 
@@ -162,6 +169,91 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
       .then((review) => this.telegram.renewalReceived(brand, { ...row, review }, { mime, data }))
       .catch(() => undefined);
     return this.toPublic(row);
+  }
+
+  /** A new service bought in the app: an HMPanel store order; the link arrives once it is delivered. */
+  async createPurchase(input: {
+    tenant?: string;
+    planId: string;
+    receipt: string;
+    payerName?: string;
+    payerNote?: string;
+    deviceEndpoint?: string;
+  }) {
+    const brand = await this.brands.resolve(input.tenant);
+    if (!brand?.purchaseEnabled || !brand.renewalPanelId || !brand.renewalEnabled) {
+      throw new BadRequestException('Buying a new service is not available here');
+    }
+    const plan = parsePlans(brand.plansJson).find((p) => p.id === input.planId && p.price.trim() && p.productId);
+    if (!plan) throw new BadRequestException('Choose one of the listed plans');
+    const panel = await this.prisma.panelConnection.findUnique({ where: { id: brand.renewalPanelId } });
+    if (!panel || panel.type !== 'hmpanel') throw new BadRequestException('Buying a new service is not available here');
+
+    const { mime, data } = parseDataUrl(input.receipt);
+    const receiptHash = createHash('sha256').update(data).digest('hex');
+    const used = await this.prisma.renewalRequest.findFirst({
+      where: { brandId: brand.id, receiptHash, status: RenewalStatus.APPROVED },
+      select: { id: true },
+    });
+    if (used) throw new BadRequestException('This receipt was already used for a renewal');
+
+    const key = this.config.getOrThrow<string>('ENCRYPTION_KEY');
+    const name = input.payerName?.trim().slice(0, 80) || null;
+    const row = await this.prisma.renewalRequest.create({
+      data: {
+        orgId: brand.orgId,
+        brandId: brand.id,
+        kind: 'purchase',
+        subId: `new:${createHash('sha1').update(receiptHash + Date.now()).digest('hex').slice(0, 12)}`,
+        subUrlEnc: encryptSecret('', key),
+        displayName: name ? `${name} (خرید جدید)` : 'خرید سرویس جدید',
+        panelId: panel.id,
+        clientRef: null,
+        planId: plan.id,
+        planTitle: plan.title,
+        days: plan.days,
+        gb: plan.gb,
+        users: plan.users,
+        mode: plan.mode,
+        price: plan.price,
+        payerName: name,
+        payerNote: input.payerNote?.trim().slice(0, 300) || null,
+        receiptMime: mime,
+        receiptData: new Uint8Array(data),
+        receiptHash,
+        deviceEndpoint: input.deviceEndpoint?.slice(0, 1024) || null,
+      },
+    });
+    try {
+      const order = await this.gateway.hmStore(panel).createOrder({
+        productId: plan.productId!,
+        name: name || 'NeoConfig customer',
+        paymentMethod: 'MANUAL_BANK',
+        receiptText: input.payerNote?.trim().slice(0, 300) || undefined,
+        receiptImage: input.receipt,
+        isRenewal: false,
+        configName: configNameFrom(name),
+        ...(plan.users > 0 ? { limitIp: plan.users } : {}),
+      });
+      const updated = await this.prisma.renewalRequest.update({
+        where: { id: row.id },
+        data: { externalOrderId: order.orderId ?? order.id ?? null, externalCode: order.trackingCode ?? null, externalSyncedAt: new Date() },
+        omit: { receiptData: true },
+      });
+      if (this.telegram.isConfigured(brand)) {
+        void this.telegram
+          .say(
+            brand,
+            `🛒 <b>خرید سرویس جدید</b> · ${escHtml(plan.title)} — ${escHtml(plan.price)}${name ? `\n💳 ${escHtml(name)}` : ''}\n` +
+              `در فروشگاه HMPanel ثبت شد (کد پیگیری <code>${escHtml(order.trackingCode ?? '-')}</code>). تأیید از ربات یا پنل HMPanel.`,
+          )
+          .catch(() => undefined);
+      }
+      return this.toPublic(updated);
+    } catch (err) {
+      await this.prisma.renewalRequest.delete({ where: { id: row.id } }).catch(() => undefined);
+      throw new BadRequestException(hmError(err));
+    }
   }
 
   async statuses(ids: string[]) {
@@ -172,7 +264,12 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
       omit: { receiptData: true, subUrlEnc: true },
       orderBy: { createdAt: 'desc' },
     });
-    return rows.map((r) => this.toPublic(r));
+    const key = this.config.getOrThrow<string>('ENCRYPTION_KEY');
+    return rows.map((r) => ({
+      ...this.toPublic(r),
+      // Only whoever holds the request id (the buyer's device) ever sees the new link.
+      subscriptionUrl: r.kind === 'purchase' && r.resultUrlEnc ? decryptSecret(r.resultUrlEnc, key) : null,
+    }));
   }
 
   // ---------- admin ----------
@@ -209,6 +306,7 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
       adminNote: r.adminNote,
       canApply: Boolean(r.panelId && r.clientRef),
       via: r.externalOrderId ? 'hmpanel' : 'local',
+      kind: r.kind,
       externalCode: r.externalCode,
       appliedOnPanel: r.appliedOnPanel,
       applyMessage: r.applyMessage,
@@ -337,6 +435,12 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
         } catch (err) {
           throw new BadRequestException(hmError(err));
         }
+        // A new service finishes when HMPanel hands over its link (picked up by the sync).
+        if (row.kind === 'purchase') {
+          await this.prisma.renewalRequest.update({ where: { id: row.id }, data: { applyMessage: 'Approved in HMPanel — waiting for delivery' } });
+          void this.syncExternal({ ids: [row.id] }).catch(() => undefined);
+          return { ok: true, appliedOnPanel: null, applyMessage: 'Waiting for HMPanel to deliver the service', notified: 0 };
+        }
       }
       appliedOnPanel = true;
       applyMessage = `HMPanel ${row.externalCode ?? ''}`.trim();
@@ -370,12 +474,9 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
     const push = await this.push.notifySubscription(
       row.brandId,
       row.subId,
-      {
-        title: 'تمدید انجام شد',
-        body: `${row.planTitle} روی اشتراک شما فعال شد.`,
-        url: '/',
-        tag: `renewal-${row.id}`,
-      },
+      row.kind === 'purchase'
+        ? { title: 'سرویس جدید شما آماده است', body: `${row.planTitle} — برای افزودن به برنامه، اپ را باز کنید.`, url: `/?renewal=${row.id}`, tag: `renewal-${row.id}` }
+        : { title: 'تمدید انجام شد', body: `${row.planTitle} روی اشتراک شما فعال شد.`, url: `/?renewal=${row.id}`, tag: `renewal-${row.id}` },
       row.deviceEndpoint,
     );
     await this.audit.log({
@@ -416,9 +517,9 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
       row.brandId,
       row.subId,
       {
-        title: 'درخواست تمدید تأیید نشد',
-        body: opts.note?.trim() || 'پرداخت شما تأیید نشد. برای جزئیات برنامه را باز کنید.',
-        url: '/',
+        title: row.kind === 'purchase' ? 'خرید شما تأیید نشد' : 'درخواست تمدید تأیید نشد',
+        body: opts.note?.trim() || 'پرداخت شما تأیید نشد. برای دیدن علت و تماس با پشتیبانی، اپ را باز کنید.',
+        url: `/?renewal=${row.id}`,
         tag: `renewal-${row.id}`,
       },
       row.deviceEndpoint,
@@ -466,10 +567,15 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
           const order = await (await this.storeFor(row)).order(row.externalOrderId!);
           await this.prisma.renewalRequest.update({ where: { id: row.id }, data: { externalSyncedAt: new Date() } });
           if (HM_ORDER_DONE.has(order.status)) {
-            await this.decideApprove(row, { apply: false, by: 'HMPanel', userId: null, telegramOrigin: true, externalDone: true });
+            if (row.kind === 'purchase') {
+              if (!order.subscriptionUrl) continue; // approved, still being built
+              const key = this.config.getOrThrow<string>('ENCRYPTION_KEY');
+              await this.prisma.renewalRequest.update({ where: { id: row.id }, data: { resultUrlEnc: encryptSecret(order.subscriptionUrl, key) } });
+            }
+            await this.decideApprove(row, { apply: false, by: 'HMPanel', userId: null, telegramOrigin: false, externalDone: true });
           } else if (HM_ORDER_REFUSED.has(order.status)) {
             const reason = order.rejectReason ?? order.payment?.rejectReason ?? undefined;
-            await this.decideReject(row, { note: reason ?? undefined, by: 'HMPanel', userId: null, telegramOrigin: true, externalDone: true });
+            await this.decideReject(row, { note: reason ?? undefined, by: 'HMPanel', userId: null, telegramOrigin: false, externalDone: true });
           } else if (order.status === 'PROVISION_FAILED' && order.provisionError) {
             await this.prisma.renewalRequest.update({ where: { id: row.id }, data: { applyMessage: order.provisionError.slice(0, 300) } });
           }
@@ -516,6 +622,7 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
 
   private toPublic(r: {
     id: string;
+    kind?: string;
     planTitle: string;
     price: string;
     status: RenewalStatus;
@@ -526,6 +633,7 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
   }) {
     return {
       id: r.id,
+      kind: r.kind ?? 'renewal',
       subId: r.subId,
       planTitle: r.planTitle,
       price: r.price,
@@ -550,4 +658,16 @@ function parseDataUrl(raw: string): { mime: string; data: Buffer } {
 
 function escHtml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** HMPanel's store refuses services it did not sell to its own admin; those are reviewed here. */
+export function storeCannotRenew(err: unknown) {
+  const msg = err instanceof Error ? err.message : '';
+  return /service not found for renewal|can only be renewed|can only renew|renewal requires a service/i.test(msg);
+}
+
+/** HMPanel wants a Latin config name; it adds the number that makes it unique. */
+export function configNameFrom(name: string | null) {
+  const latin = (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 16);
+  return latin.length >= 3 ? latin : 'user';
 }

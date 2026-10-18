@@ -1,6 +1,6 @@
 'use client';
 
-import { Bot, Check, CreditCard, ExternalLink, Package, PlugZap, RefreshCw, Store, TriangleAlert, Wallet } from 'lucide-react';
+import { Bot, Check, CreditCard, ExternalLink, Package, PlugZap, RefreshCw, ShoppingBag, Store, TriangleAlert, Wallet } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import type { RenewalPlan } from '@/lib/api';
 import { AdminBrand, HmOverview, HmProduct, adminApi } from './adminApi';
@@ -328,6 +328,24 @@ export function HmPanelTab({
               </ul>
             )}
             <p className="mt-3 text-xs leading-6 text-[var(--ink-3)]">جزئیات هر پلن (عنوان، نوع سرویس، دسته‌بندی) در تب «تمدید» قابل ویرایش است.</p>
+          </Card>
+
+          {/* new purchases */}
+          <Card>
+            <Head icon={<ShoppingBag className="h-5 w-5" />} title="خرید سرویس جدید در اپ" sub="مشتری از داخل اپ سرویس تازه می‌خرد" />
+            <div className="mt-3">
+              <Toggle
+                id="hm-purchase"
+                label="دکمهٔ «خرید سرویس جدید» در اپ کاربر نمایش داده شود"
+                checked={draft.purchaseEnabled}
+                onChange={(v) => set('purchaseEnabled', v)}
+              />
+            </div>
+            <p className="mt-2 text-xs leading-6 text-[var(--ink-3)]">
+              سفارش با همان پلن‌های متصل به محصولات و همان کارت، در فروشگاه HMPanel ثبت می‌شود و ربات HMPanel آن را برای تأیید می‌فرستد. بعد از تأیید، HMPanel سرویس را می‌سازد و لینکش خودکار به اپ همان مشتری اضافه می‌شود.
+            </p>
+            {draft.purchaseEnabled && !hasStore && <Warn>برای خرید جدید، ماژول فروشگاه HMPanel لازم است.</Warn>}
+            {draft.purchaseEnabled && linked.length === 0 && <Warn>هنوز هیچ پلنی به محصولات فروشگاه وصل نیست.</Warn>}
           </Card>
 
           {/* readiness */}

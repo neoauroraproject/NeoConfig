@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, BellOff, Check, Globe, LifeBuoy, Palette, Pencil, Plus, Share, Trash2 } from 'lucide-react';
+import { Bell, BellOff, Check, Globe, LifeBuoy, Palette, Pencil, Plus, Share, ShoppingBag, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import type { SavedAccount } from '@/lib/accounts';
@@ -162,6 +162,7 @@ export function MenuSheet({
   theme,
   themes,
   onTheme,
+  onBuy,
 }: {
   open: boolean;
   onClose: () => void;
@@ -172,6 +173,7 @@ export function MenuSheet({
   theme: ThemeId;
   themes: ThemeId[];
   onTheme: (t: ThemeId) => void;
+  onBuy?: () => void;
 }) {
   const { t, brand } = useSf();
   const support = brand.supportTelegram
@@ -261,6 +263,15 @@ export function MenuSheet({
               })}
             </div>
           </div>
+        )}
+
+        {onBuy && (
+          <button type="button" onClick={onBuy} className="flex w-full items-center gap-3 rounded-3xl bg-surface-2 p-4 text-start">
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-brand text-white">
+              <ShoppingBag className="h-4 w-4" />
+            </span>
+            <span className="flex-1 text-sm font-medium text-ink">{t('buyNew')}</span>
+          </button>
         )}
 
         {support && (

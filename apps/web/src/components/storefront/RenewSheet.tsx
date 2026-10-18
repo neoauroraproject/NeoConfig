@@ -21,10 +21,13 @@ export function RenewSheet({
   push,
   onEnablePush,
   serviceKind,
+  mode = 'renew',
 }: {
   open: boolean;
   onClose: () => void;
-  subUrl: string;
+  /** renew: extend this subscription. purchase: buy a new one (HMPanel store plans only). */
+  mode?: 'renew' | 'purchase';
+  subUrl?: string;
   serviceKind?: 'xui' | 'pasarguard' | null;
   onSubmitted: (r: PublicRenewal) => void;
   push: PushState;
@@ -42,9 +45,14 @@ export function RenewSheet({
   const [category, setCategory] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // Plans for this kind of service only (a 3x-ui plan cannot renew a PasarGuard user).
-  const plans = (renewal?.plans ?? []).filter((p) => !p.service || !serviceKind || p.service === serviceKind);
-  const categories = [...new Set(plans.map((p) => p.category).filter((c): c is string => Boolean(c)))];
-  const shown = category ? plans.filter((p) => p.category === category) : plans;
+  const purchase = mode === 'purchase';
+  const plans = (renewal?.plans ?? []).filter((p) =>
+    purchase ? Boolean(p.productId) : !p.service || !serviceKind || p.service === serviceKind,
+  );
+  // Tabs: the plan's category, or its service type when it has none.
+  const groupOf = (p: RenewalPlan) => p.category || (p.service === 'xui' ? 'V2Ray / Xray' : p.service === 'pasarguard' ? 'PasarGuard' : null);
+  const categories = [...new Set(plans.map(groupOf).filter((c): c is string => Boolean(c)))];
+  const shown = category ? plans.filter((p) => groupOf(p) === category) : plans;
 
   useEffect(() => {
     if (open) {
@@ -74,15 +82,15 @@ export function RenewSheet({
     setBusy(true);
     setError(null);
     try {
-      const r = await publicApi.createRenewal({
+      const common = {
         tenant,
-        url: subUrl,
         planId: plan.id,
         receipt,
         payerName: payerName.trim() || undefined,
         payerNote: payerNote.trim() || undefined,
         deviceEndpoint: await currentEndpoint(),
-      });
+      };
+      const r = purchase ? await publicApi.createPurchase(common) : await publicApi.createRenewal({ ...common, url: subUrl ?? '' });
       onSubmitted(r);
       setStep('sent');
     } catch (err) {
@@ -103,14 +111,14 @@ export function RenewSheet({
 
   if (!renewal) {
     return (
-      <Sheet open={open} onClose={onClose} title={t('renewTitle')} closeLabel={t('close')}>
+      <Sheet open={open} onClose={onClose} title={purchase ? t('purchaseTitle') : t('renewTitle')} closeLabel={t('close')}>
         <p className="text-sm leading-7 text-ink-2">{t('renewUnavailable')}</p>
       </Sheet>
     );
   }
 
   return (
-    <Sheet open={open} onClose={onClose} title={t('renewTitle')} closeLabel={t('close')}>
+    <Sheet open={open} onClose={onClose} title={purchase ? t('purchaseTitle') : t('renewTitle')} closeLabel={t('close')}>
       {step === 'plan' && (
         <div>
           <p className="mb-3 text-sm text-ink-2">{t('choosePlan')}</p>
@@ -124,7 +132,7 @@ export function RenewSheet({
                   aria-selected={category === c}
                   onClick={() => {
                     setCategory(c);
-                    const first = (c ? plans.filter((p) => p.category === c) : plans)[0];
+                    const first = (c ? plans.filter((p) => groupOf(p) === c) : plans)[0];
                     if (first) setPlanId(first.id);
                   }}
                   className={`h-9 shrink-0 rounded-full px-4 text-sm ${category === c ? 'bg-ink text-on-ink' : 'bg-surface-2 text-ink-2'}`}
@@ -246,7 +254,7 @@ export function RenewSheet({
           </label>
 
           <label htmlFor="payer-name" className="mb-1.5 mt-4 block text-[13px] text-ink-2">
-            {t('payerName')} <span className="text-ink-3">({t('optional')})</span>
+            {purchase ? t('buyerName') : t('payerName')} <span className="text-ink-3">({t('optional')})</span>
           </label>
           <input
             id="payer-name"
@@ -300,7 +308,7 @@ export function RenewSheet({
             <Check className="h-9 w-9" strokeWidth={1.8} />
           </motion.span>
           <h3 className="mt-5 text-lg font-semibold text-ink">{t('sentTitle')}</h3>
-          <p className="mx-auto mt-2 max-w-[32ch] text-sm leading-7 text-ink-2">{t('sentBody')}</p>
+          <p className="mx-auto mt-2 max-w-[32ch] text-sm leading-7 text-ink-2">{purchase ? t('purchaseSent') : t('sentBody')}</p>
           {push === 'off' && (
             <button
               type="button"

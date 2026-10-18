@@ -85,6 +85,8 @@ export type Branding = {
   supportTelegram: string | null;
   contactEmail: string | null;
   allowCopyLink: boolean;
+  /** Customers can buy a new service in the app. */
+  purchase?: boolean;
   renewal: {
     cardNumber: string;
     cardHolder: string | null;
@@ -96,6 +98,10 @@ export type Branding = {
 
 export type PublicRenewal = {
   id: string;
+  /** renewal, or purchase (a new service bought in the app) */
+  kind?: 'renewal' | 'purchase';
+  /** Purchases: the new subscription link once HMPanel delivered it. */
+  subscriptionUrl?: string | null;
   subId: string;
   planTitle: string;
   price: string;
@@ -176,6 +182,9 @@ export const publicApi = {
     deviceEndpoint?: string;
   }) =>
     request<PublicRenewal>('/api/v1/public/renewals', { method: 'POST', body: JSON.stringify(body) }),
+
+  createPurchase: (body: { tenant: string; planId: string; receipt: string; payerName?: string; payerNote?: string; deviceEndpoint?: string }) =>
+    request<PublicRenewal>('/api/v1/public/purchases', { method: 'POST', body: JSON.stringify(body) }),
 
   renewalStatus: (ids: string[]) =>
     request<PublicRenewal[]>('/api/v1/public/renewals/status', {

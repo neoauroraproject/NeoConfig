@@ -52,7 +52,7 @@ const EDITABLE = [
   'appName', 'shortName', 'tagline', 'logoUrl', 'iconUrl', 'primaryColor', 'accentColor',
   'theme', 'defaultLocale', 'supportUrl', 'supportTelegram', 'contactEmail', 'allowCopyLink',
   'renewalEnabled', 'cardNumber', 'cardHolder', 'bankName', 'renewalNote', 'expiryRemindersEnabled',
-  'telegramChatId', 'renewalVia', 'renewalPanelId', 'cardFromPanel', 'hmCardId', 'plansSync',
+  'telegramChatId', 'renewalVia', 'renewalPanelId', 'cardFromPanel', 'hmCardId', 'plansSync', 'purchaseEnabled',
 ] as const;
 
 export type BrandInput = Partial<Record<(typeof EDITABLE)[number], string | boolean | null>> & {
@@ -135,6 +135,8 @@ export class BrandsService {
       supportTelegram: b?.supportTelegram ?? null,
       contactEmail: b?.contactEmail ?? null,
       allowCopyLink: b?.allowCopyLink ?? true,
+      // New services are sold through the HMPanel store, so only store-linked plans qualify.
+      purchase: Boolean(b?.purchaseEnabled && b.renewalPanelId && renewal && plans.some((p) => p.productId)),
       renewal,
     };
   }
@@ -362,7 +364,7 @@ export class BrandsService {
     for (const k of EDITABLE) {
       const v = input[k];
       if (v === undefined) continue;
-      if (k === 'allowCopyLink' || k === 'renewalEnabled' || k === 'expiryRemindersEnabled' || k === 'cardFromPanel' || k === 'plansSync')
+      if (k === 'allowCopyLink' || k === 'renewalEnabled' || k === 'expiryRemindersEnabled' || k === 'cardFromPanel' || k === 'plansSync' || k === 'purchaseEnabled')
         out[k] = Boolean(v);
       else if (k === 'theme') out[k] = THEMES.includes(v as never) ? v : 'mist';
       else if (k === 'renewalVia') out[k] = v === 'hmpanel' ? 'hmpanel' : 'local';
@@ -598,6 +600,7 @@ export class BrandsService {
       cardFromPanel: r.cardFromPanel,
       hmCardId: r.hmCardId,
       plansSync: r.plansSync,
+      purchaseEnabled: r.purchaseEnabled,
       defaultLocale: r.defaultLocale,
       supportUrl: r.supportUrl,
       supportTelegram: r.supportTelegram,

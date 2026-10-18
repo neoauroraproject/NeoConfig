@@ -200,6 +200,8 @@ function BrandEditor({
         hmCardId: draft.hmCardId ?? null,
         plansSync: draft.plansSync ?? false,
         purchaseEnabled: draft.purchaseEnabled ?? false,
+        autoDecideMinutes: draft.autoDecideMinutes ?? 0,
+        autoDecideAction: draft.autoDecideAction ?? 'approve',
         defaultLocale: draft.defaultLocale,
         supportUrl: draft.supportUrl ?? '',
         supportTelegram: draft.supportTelegram ?? '',
@@ -646,6 +648,43 @@ function RenewalTab({ draft, set, openHm }: { draft: AdminBrand; set: SetFn; ope
             <input id="r-note" className="field" value={draft.renewalNote ?? ''} onChange={(e) => set('renewalNote', e.target.value)} />
           </Field>
         </div>
+      </Card>
+      <Card>
+        <Toggle
+          id="r-auto"
+          label="تصمیم خودکار اگر کسی رسید را بررسی نکرد"
+          checked={(draft.autoDecideMinutes ?? 0) > 0}
+          onChange={(v) => set('autoDecideMinutes', v ? 10 : 0)}
+        />
+        {(draft.autoDecideMinutes ?? 0) > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+            <span>بعد از</span>
+            <input
+              type="number"
+              min={1}
+              max={10080}
+              dir="ltr"
+              aria-label="دقیقه"
+              className="field !w-24 text-center"
+              value={draft.autoDecideMinutes}
+              onChange={(e) => set('autoDecideMinutes', Math.max(1, Math.round(Number(e.target.value) || 1)))}
+            />
+            <span>دقیقه،</span>
+            <select
+              aria-label="تصمیم"
+              className="field !w-auto"
+              value={draft.autoDecideAction ?? 'approve'}
+              onChange={(e) => set('autoDecideAction', e.target.value as 'approve' | 'reject')}
+            >
+              <option value="approve">تأیید و تمدید خودکار</option>
+              <option value="reject">رد خودکار</option>
+            </select>
+            <span>انجام شود.</span>
+          </div>
+        )}
+        <p className="mt-2 text-xs leading-6 text-[var(--ink-3)]">
+          رسیدهایی که در این مدت تأیید یا رد نشوند، خودکار تصمیم می‌گیرند و در «تمدیدها» و داشبورد با برچسب «خودکار» دیده می‌شوند؛ ربات هم خبر می‌دهد. اگر پنل تمدید را نپذیرد، رسید برای بررسی دستی می‌ماند. سفارش‌های فروشگاه HMPanel از تأیید خودکار خود HMPanel پیروی می‌کنند.
+        </p>
       </Card>
       <button
         type="button"

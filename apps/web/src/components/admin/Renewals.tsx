@@ -116,6 +116,9 @@ function RenewalCard({ r, onDone }: { r: AdminRenewal; onDone: () => void }) {
             <span className="h-2.5 w-2.5 rounded-full" style={{ background: r.brand.primaryColor }} />
             <p className="font-medium">{r.displayName || r.subId}</p>
             <span className="text-xs text-[var(--ink-3)]">{r.brand.appName}</span>
+            {r.autoDecided && (
+              <span className="rounded-full bg-[#eef2ff] px-2 py-0.5 text-[11px] text-[#3b47b5]">خودکار</span>
+            )}
             {r.kind === 'purchase' && (
               <span className="rounded-full bg-[var(--ink)] px-2 py-0.5 text-[11px] text-white">خرید جدید</span>
             )}

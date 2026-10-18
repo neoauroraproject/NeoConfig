@@ -118,7 +118,7 @@ export class PasarGuardClientService {
     const user = await this.request<PasarGuardUser>(cfg, 'GET', path);
     const body: Record<string, unknown> = {
       status: 'active',
-      data_limit: nextQuotaBytes(Number(user.data_limit) || 0, plan),
+      data_limit: nextQuotaBytes(Number(user.data_limit) || 0, plan, Number(user.used_traffic) || 0),
     };
     if (plan.days > 0) {
       body.expire = new Date(nextExpiryMs(expireToMs(user.expire) ?? 0, plan.days)).toISOString();

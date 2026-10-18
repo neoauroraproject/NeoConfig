@@ -20,6 +20,8 @@ export type AdminBrand = {
   hmCardId: string | null;
   plansSync: boolean;
   purchaseEnabled: boolean;
+  autoDecideMinutes: number;
+  autoDecideAction: 'approve' | 'reject';
   defaultLocale: string;
   supportUrl: string | null;
   supportTelegram: string | null;
@@ -91,6 +93,8 @@ export type Overview = {
     planTitle: string;
     price: string;
     status: string;
+    autoDecided?: boolean;
+    kind?: string;
     createdAt: string;
   }>;
 };
@@ -113,6 +117,7 @@ export type AdminRenewal = {
   canApply: boolean;
   via: 'local' | 'hmpanel';
   kind: 'renewal' | 'purchase';
+  autoDecided: boolean;
   externalCode: string | null;
   appliedOnPanel: boolean | null;
   applyMessage: string | null;
@@ -204,6 +209,7 @@ export const adminApi = {
     request<{ ok: boolean; buttons?: boolean; buttonsMessage?: string }>(`/api/v1/admin/brands/${id}/telegram/test`, { method: 'POST', token: tk() }),
   uploadLogo: (id: string, dataUrl: string) =>
     request<AdminBrand>(`/api/v1/admin/brands/${id}/logo`, { method: 'POST', token: tk(), body: json({ dataUrl }) }),
+  pendingRenewals: () => request<{ count: number; latestAt: string | null }>('/api/v1/admin/renewals/pending', { token: tk() }),
   hmpanelPanels: (id: string) =>
     request<Array<{ id: string; name: string; host: string; healthy: boolean | null; inBrand: boolean }>>(`/api/v1/admin/brands/${id}/hmpanel`, {
       token: tk(),

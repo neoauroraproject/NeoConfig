@@ -339,13 +339,15 @@ export class XuiClientService {
 
     const session = await this.authenticate(cfg);
     const now = Date.now();
-    for (const { inbound, client } of matches) {
+    for (const { inbound, client, stat } of matches) {
       const current = Number(client.expiryTime) || 0;
+      const quotaNow = Number(client.totalGB) || Number(stat?.total) || 0;
+      const usedNow = (Number(stat?.up) || 0) + (Number(stat?.down) || 0);
       const changes: Partial<XuiInboundClient> = {
         enable: true,
         // A negative expiry is "starts on first use"; a renewal makes it concrete.
         expiryTime: nextExpiryMs(current < 0 ? 0 : current, plan.days, now),
-        totalGB: nextQuotaBytes(Number(client.totalGB) || 0, plan),
+        totalGB: nextQuotaBytes(quotaNow, plan, usedNow),
       };
       if (plan.users > 0) {
         // HWID limit (3.7+) when the client uses it or the panel has it; else the classic IP limit.

@@ -13,10 +13,14 @@ describe('renewal terms', () => {
     expect(nextExpiryMs(now + 5 * DAY, 0, now)).toBe(now + 5 * DAY);
   });
 
-  it('add mode stacks data on the current quota and keeps unlimited unlimited', () => {
+  it('add mode stacks data on the current quota and never turns a top-up into unlimited', () => {
     const t = normalizeTerms({ days: 30, gb: 20, mode: 'add' });
     expect(nextQuotaBytes(50 * GB, t)).toBe(70 * GB);
-    expect(nextQuotaBytes(0, t)).toBe(0);
+    expect(nextQuotaBytes(0, t, 8 * GB)).toBe(28 * GB);
+    expect(nextQuotaBytes(0, t)).toBe(20 * GB);
+    // A time-only plan leaves the quota alone, unlimited included.
+    expect(nextQuotaBytes(0, normalizeTerms({ days: 30, gb: 0, mode: 'add' }))).toBe(0);
+    expect(nextQuotaBytes(50 * GB, normalizeTerms({ days: 30, gb: 0, mode: 'add' }))).toBe(50 * GB);
   });
 
   it('reset mode sets the new total, 0 meaning unlimited', () => {

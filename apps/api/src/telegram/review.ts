@@ -116,7 +116,7 @@ function nowLine(c: NonNullable<ReviewInfo['current']>) {
 function afterLine(r: RenewalNotice, c: NonNullable<ReviewInfo['current']>) {
   const terms = normalizeTerms({ days: r.days, gb: r.gb, users: r.users, mode: r.mode as 'add' | 'reset' });
   const quotaNow = c.quotaKind === 'known' ? c.quotaBytes ?? 0 : 0;
-  const quota = nextQuotaBytes(quotaNow, terms);
+  const quota = nextQuotaBytes(quotaNow, terms, c.totalUsedBytes ?? 0);
   const used = terms.mode === 'reset' ? 0 : c.totalUsedBytes ?? 0;
   const vol = quota <= 0 ? 'نامحدود' : `${gbText(Math.max(0, quota - used))} مانده`;
   const expMs = c.expiryKind === 'known' && c.expiryAt ? new Date(c.expiryAt).getTime() : 0;

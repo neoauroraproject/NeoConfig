@@ -96,7 +96,7 @@ export function HmPanelRenewal({ draft, set }: { draft: AdminBrand; set: SetFn }
         gb: p.trafficBytes > 0 ? +(p.trafficBytes / GB).toFixed(2) : 0,
         price: p.priceToman ? `${fa(p.priceToman)} تومان` : prev?.price ?? '',
         users: p.ipLimitOptions?.[0] ?? prev?.users ?? 0,
-        mode: 'reset',
+        mode: p.trafficBytes > 0 ? 'add' : 'reset',
         productId: p.id,
         ...(service ? { service } : {}),
         ...(p.category?.name ? { category: p.category.name.slice(0, 40) } : prev?.category ? { category: prev.category } : {}),

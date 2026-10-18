@@ -1,7 +1,7 @@
 'use client';
 
 import { BadgeCheck, LayoutGrid, LogOut, Menu, Palette, PlugZap, Users, X } from 'lucide-react';
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { ApiError } from '@/lib/api';
 import { Me, adminApi, getToken, setToken } from './adminApi';
 import { Brands } from './Brands';
@@ -32,6 +32,8 @@ export function AdminApp() {
   const [checking, setChecking] = useState(true);
   const [section, setSection] = useState<Section>('overview');
   const [drawer, setDrawer] = useState(false);
+  const [pending, setPending] = useState(0);
+  const lastLatest = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
     document.documentElement.lang = 'fa';
@@ -48,6 +50,35 @@ export function AdminApp() {
       .catch(() => setToken(null))
       .finally(() => setChecking(false));
   }, []);
+
+  // New receipts show up in the menu within ~20s, with a soft chime and the count in the tab title.
+  useEffect(() => {
+    if (!me) return;
+    let stop = false;
+    const poll = () =>
+      adminApi
+        .pendingRenewals()
+        .then((r) => {
+          if (stop) return;
+          setPending(r.count);
+          if (lastLatest.current !== undefined && r.latestAt && r.latestAt !== lastLatest.current) chime();
+          lastLatest.current = r.latestAt;
+        })
+        .catch(() => undefined);
+    void poll();
+    const id = setInterval(poll, 20_000);
+    const onFocus = () => void poll();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      stop = true;
+      clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [me]);
+
+  useEffect(() => {
+    document.title = pending > 0 ? `(${pending}) مدیریت NeoConfig` : 'مدیریت NeoConfig';
+  }, [pending]);
 
   function go(s: Section) {
     setSection(s);
@@ -94,7 +125,15 @@ export function AdminApp() {
             }`}
           >
             <Icon className="h-[18px] w-[18px]" strokeWidth={1.7} />
-            {n.label}
+            <span className="flex-1 text-start">{n.label}</span>
+            {n.id === 'renewals' && pending > 0 && (
+              <span className="relative flex items-center">
+                <span className="absolute inset-0 animate-ping rounded-full bg-[#e5484d] opacity-40" />
+                <span className="num relative grid h-5 min-w-5 place-items-center rounded-full bg-[#e5484d] px-1.5 text-[11px] text-white">
+                  {pending > 99 ? '99+' : pending}
+                </span>
+              </span>
+            )}
           </button>
         );
       })}
@@ -119,8 +158,9 @@ export function AdminApp() {
       <aside className="sticky top-0 hidden h-dvh border-e border-[var(--line)] bg-[var(--surface)] lg:block">{sidebar}</aside>
 
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-[var(--line)] bg-[var(--surface)] px-4 lg:hidden">
-        <button type="button" aria-label="منو" onClick={() => setDrawer(true)} className="grid h-10 w-10 place-items-center rounded-xl">
+        <button type="button" aria-label={pending ? `منو — ${pending} رسید در انتظار` : 'منو'} onClick={() => setDrawer(true)} className="relative grid h-10 w-10 place-items-center rounded-xl">
           <Menu className="h-5 w-5" />
+          {pending > 0 && <span className="absolute end-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-[#e5484d] ring-2 ring-[var(--surface)]" />}
         </button>
         <p className="text-sm font-semibold">{nav.find((n) => n.id === section)?.label}</p>
         <span className="w-10" />
@@ -206,4 +246,26 @@ function Login({ onDone }: { onDone: (me: Me) => void }) {
       </form>
     </div>
   );
+}
+
+/** A short two-note chime for a new receipt (silent if the browser blocks audio). */
+function chime() {
+  try {
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctx();
+    [660, 880].forEach((f, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, ctx.currentTime + i * 0.12);
+      g.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + i * 0.12 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i * 0.12 + 0.25);
+      o.connect(g).connect(ctx.destination);
+      o.start(ctx.currentTime + i * 0.12);
+      o.stop(ctx.currentTime + i * 0.12 + 0.3);
+    });
+    setTimeout(() => void ctx.close(), 800);
+  } catch {
+    /* no audio */
+  }
 }

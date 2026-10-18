@@ -29,11 +29,19 @@ export function nextExpiryMs(currentMs: number, days: number, now = Date.now()):
   return base + days * DAY;
 }
 
-/** New quota in bytes; 0 means unlimited. An unlimited account stays unlimited when adding. */
-export function nextQuotaBytes(currentBytes: number, t: RenewalTerms): number {
+/**
+ * New quota in bytes; 0 means unlimited.
+ * add: the plan's GB go on top of the current quota. A quota that reads as 0
+ * (unlimited, or a panel that didn't say) becomes "used so far + the plan",
+ * so a paid top-up never turns into unlimited data by accident. A plan with
+ * no GB keeps the quota as it is.
+ */
+export function nextQuotaBytes(currentBytes: number, t: RenewalTerms, usedBytes = 0): number {
   if (t.mode === 'reset') return t.gb > 0 ? Math.round(t.gb * GB) : 0;
-  if (currentBytes <= 0) return 0;
-  return currentBytes + Math.round(t.gb * GB);
+  const add = Math.round(t.gb * GB);
+  if (add <= 0) return Math.max(0, currentBytes);
+  if (currentBytes <= 0) return Math.max(0, usedBytes) + add;
+  return currentBytes + add;
 }
 
 export function describeTerms(t: RenewalTerms): string {

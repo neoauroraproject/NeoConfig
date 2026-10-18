@@ -68,6 +68,8 @@ class BrandDto {
   @IsOptional() @IsString() @MaxLength(64) hmCardId?: string | null;
   @IsOptional() @IsBoolean() plansSync?: boolean;
   @IsOptional() @IsBoolean() purchaseEnabled?: boolean;
+  @IsOptional() @IsNumber() autoDecideMinutes?: number;
+  @IsOptional() @IsIn(['approve', 'reject']) autoDecideAction?: string;
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => PlanDto) plans?: PlanDto[];
   @IsOptional() @IsArray() @IsString({ each: true }) panelIds?: string[];
 }

@@ -39,7 +39,10 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
 
   /** HMPanel store orders are decided over there; follow them every minute. */
   onApplicationBootstrap() {
-    this.syncTimer = setInterval(() => void this.syncExternal().catch(() => undefined), 60_000);
+    this.syncTimer = setInterval(() => {
+      void this.syncExternal().catch(() => undefined);
+      void this.autoDecide().catch((err) => this.logger.warn(`Auto decide failed: ${(err as Error).message}`));
+    }, 60_000);
     this.syncTimer.unref?.();
   }
 
@@ -307,12 +310,78 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
       canApply: Boolean(r.panelId && r.clientRef),
       via: r.externalOrderId ? 'hmpanel' : 'local',
       kind: r.kind,
+      autoDecided: r.autoDecided,
       externalCode: r.externalCode,
       appliedOnPanel: r.appliedOnPanel,
       applyMessage: r.applyMessage,
       createdAt: r.createdAt.toISOString(),
       decidedAt: r.decidedAt?.toISOString() ?? null,
     }));
+  }
+
+  /** For the admin menu dot: how many receipts wait, and when the newest came in. */
+  async pendingCount(user: AuthUser) {
+    const where = { brand: brandScope(user), status: RenewalStatus.PENDING };
+    const [count, latest] = await Promise.all([
+      this.prisma.renewalRequest.count({ where }),
+      this.prisma.renewalRequest.findFirst({ where, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
+    ]);
+    return { count, latestAt: latest?.createdAt.toISOString() ?? null };
+  }
+
+  /**
+   * Receipts nobody reviewed within the brand's time limit get the brand's
+   * default decision. Each request is tried once; a panel that refuses the
+   * renewal leaves it pending for a person. HMPanel store orders follow
+   * HMPanel's own auto-approval instead.
+   */
+  async autoDecide(now = new Date()) {
+    const brands = await this.prisma.brand.findMany({
+      where: { autoDecideMinutes: { gt: 0 } },
+      select: { id: true, autoDecideMinutes: true, autoDecideAction: true },
+    });
+    for (const brand of brands) {
+      const due = await this.prisma.renewalRequest.findMany({
+        where: {
+          brandId: brand.id,
+          status: RenewalStatus.PENDING,
+          externalOrderId: null,
+          autoTriedAt: null,
+          createdAt: { lt: new Date(now.getTime() - brand.autoDecideMinutes * 60_000) },
+        },
+        omit: { receiptData: true },
+        take: 20,
+      });
+      for (const row of due) {
+        // Claim first so a second instance or the next tick never repeats it.
+        const claimed = await this.prisma.renewalRequest.updateMany({
+          where: { id: row.id, autoTriedAt: null, status: RenewalStatus.PENDING },
+          data: { autoTriedAt: now },
+        });
+        if (!claimed.count) continue;
+        try {
+          if (brand.autoDecideAction === 'reject') {
+            await this.decideReject(row, {
+              note: 'پرداخت در زمان مقرر تأیید نشد؛ اگر واریز کرده‌اید با پشتیبانی تماس بگیرید.',
+              by: 'رد خودکار',
+              userId: null,
+              telegramOrigin: false,
+              auto: true,
+            });
+          } else {
+            await this.decideApprove(row, {
+              apply: Boolean(row.panelId && row.clientRef),
+              by: 'تأیید خودکار',
+              userId: null,
+              telegramOrigin: false,
+              auto: true,
+            });
+          }
+        } catch (err) {
+          this.logger.warn(`Auto decision for ${row.id} left for a person: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+    }
   }
 
   async receipt(user: AuthUser, id: string) {
@@ -420,7 +489,7 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
 
   private async decideApprove(
     row: RenewalRow,
-    opts: { apply: boolean; note?: string; by: string; userId: string | null; telegramOrigin: boolean; externalDone?: boolean },
+    opts: { apply: boolean; note?: string; by: string; userId: string | null; telegramOrigin: boolean; externalDone?: boolean; auto?: boolean },
   ) {
     if (row.status !== RenewalStatus.PENDING) throw new BadRequestException('Already decided');
     const terms = normalizeTerms({ days: row.days, gb: row.gb, users: row.users, mode: row.mode as 'add' | 'reset' });
@@ -463,6 +532,7 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
       where: { id: row.id },
       data: {
         status: RenewalStatus.APPROVED,
+        autoDecided: Boolean(opts.auto),
         adminNote: opts.note?.trim().slice(0, 300) || null,
         appliedOnPanel,
         applyMessage,
@@ -492,7 +562,7 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
 
   private async decideReject(
     row: RenewalRow,
-    opts: { note?: string; by: string; userId: string | null; telegramOrigin: boolean; externalDone?: boolean },
+    opts: { note?: string; by: string; userId: string | null; telegramOrigin: boolean; externalDone?: boolean; auto?: boolean },
   ) {
     if (row.status !== RenewalStatus.PENDING) throw new BadRequestException('Already decided');
     if (row.externalOrderId && !opts.externalDone) {
@@ -507,6 +577,7 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
       where: { id: row.id },
       data: {
         status: RenewalStatus.REJECTED,
+        autoDecided: Boolean(opts.auto),
         adminNote: opts.note?.trim().slice(0, 300) || null,
         decidedAt: new Date(),
         decidedById: opts.userId,

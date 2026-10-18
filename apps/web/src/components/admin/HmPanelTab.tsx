@@ -103,7 +103,8 @@ export function HmPanelTab({
           gb: p.trafficBytes > 0 ? +(p.trafficBytes / GB).toFixed(2) : 0,
           price: p.priceToman ? `${fa(p.priceToman)} تومان` : prev?.price ?? '',
           users: p.ipLimitOptions?.[0] ?? prev?.users ?? 0,
-          mode: 'reset',
+          // Product traffic is added to what is left; unlimited products start a new unlimited period.
+          mode: p.trafficBytes > 0 ? 'add' : 'reset',
           productId: p.id,
           ...(service ? { service } : {}),
           ...(p.category?.name ? { category: p.category.name.slice(0, 40) } : prev?.category ? { category: prev.category } : {}),

@@ -53,9 +53,10 @@ const EDITABLE = [
   'theme', 'defaultLocale', 'supportUrl', 'supportTelegram', 'contactEmail', 'allowCopyLink',
   'renewalEnabled', 'cardNumber', 'cardHolder', 'bankName', 'renewalNote', 'expiryRemindersEnabled',
   'telegramChatId', 'renewalVia', 'renewalPanelId', 'cardFromPanel', 'hmCardId', 'plansSync', 'purchaseEnabled',
+  'autoDecideMinutes', 'autoDecideAction',
 ] as const;
 
-export type BrandInput = Partial<Record<(typeof EDITABLE)[number], string | boolean | null>> & {
+export type BrandInput = Partial<Record<(typeof EDITABLE)[number], string | boolean | number | null>> & {
   slug?: string;
   active?: boolean;
   isDefault?: boolean;
@@ -368,6 +369,8 @@ export class BrandsService {
         out[k] = Boolean(v);
       else if (k === 'theme') out[k] = THEMES.includes(v as never) ? v : 'mist';
       else if (k === 'renewalVia') out[k] = v === 'hmpanel' ? 'hmpanel' : 'local';
+      else if (k === 'autoDecideAction') out[k] = v === 'reject' ? 'reject' : 'approve';
+      else if (k === 'autoDecideMinutes') out[k] = Math.max(0, Math.min(10_080, Math.round(Number(v) || 0)));
       else if (k === 'renewalPanelId') out[k] = typeof v === 'string' && v.trim() ? v.trim() : null;
       else if (k === 'primaryColor' || k === 'accentColor') {
         if (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) out[k] = v;
@@ -601,6 +604,8 @@ export class BrandsService {
       hmCardId: r.hmCardId,
       plansSync: r.plansSync,
       purchaseEnabled: r.purchaseEnabled,
+      autoDecideMinutes: r.autoDecideMinutes,
+      autoDecideAction: r.autoDecideAction,
       defaultLocale: r.defaultLocale,
       supportUrl: r.supportUrl,
       supportTelegram: r.supportTelegram,

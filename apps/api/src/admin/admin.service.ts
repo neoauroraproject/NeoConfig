@@ -164,6 +164,8 @@ export class AdminService {
         planTitle: r.planTitle,
         price: r.price,
         status: r.status,
+        autoDecided: r.autoDecided,
+        kind: r.kind,
         createdAt: r.createdAt.toISOString(),
       })),
     };

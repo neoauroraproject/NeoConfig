@@ -130,6 +130,10 @@ model Brand {
   plansSync       Boolean @default(false)
   /// Customers can buy a new service in the app (through the HMPanel store)
   purchaseEnabled Boolean @default(false)
+  /// Decide receipts nobody reviewed after this many minutes (0 = off)
+  autoDecideMinutes Int    @default(0)
+  /// approve (renew on the panel) | reject
+  autoDecideAction  String @default("approve")
   /// Extra themes the customer may switch to in the app menu
   themeChoices    String[] @default([])
   defaultLocale   String  @default("fa")
@@ -345,6 +349,9 @@ model RenewalRequest {
   receiptData    Bytes
   /// renewal | purchase (a new service bought in the app)
   kind             String    @default("renewal")
+  /// Decided by the brand's timer, not a person
+  autoDecided      Boolean   @default(false)
+  autoTriedAt      DateTime?
   /// Purchases: the delivered subscription link (encrypted)
   resultUrlEnc     String?
   /// HMPanel store order when the brand renews through HMPanel

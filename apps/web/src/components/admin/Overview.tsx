@@ -179,6 +179,7 @@ export function OverviewPage({ go, isAdmin }: { go: (s: Section) => void; isAdmi
                     style={{ color: STATUS[r.status]?.tone, background: `color-mix(in srgb, ${STATUS[r.status]?.tone} 12%, transparent)` }}
                   >
                     {STATUS[r.status]?.fa ?? r.status}
+                    {r.autoDecided ? ' · خودکار' : ''}
                   </span>
                 </li>
               ))}

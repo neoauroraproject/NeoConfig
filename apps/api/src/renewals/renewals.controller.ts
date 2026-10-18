@@ -77,6 +77,13 @@ export class RenewalsController {
     return this.renewals.list(user, { status, brandId });
   }
 
+  @Get('admin/renewals/pending')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(...ADMIN_ROLES)
+  pending(@CurrentUser() user: AuthUser) {
+    return this.renewals.pendingCount(user);
+  }
+
   @Get('admin/renewals/:id/receipt')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(...ADMIN_ROLES)

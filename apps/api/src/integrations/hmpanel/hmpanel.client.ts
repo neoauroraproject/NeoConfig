@@ -119,7 +119,7 @@ export class HmPanelClientService {
   async renew(cfg: HmPanelConfig, clientId: string, plan: RenewalTerms) {
     const id = encodeURIComponent(clientId);
     const current = await this.request<HmPanelClient>(cfg, 'GET', `/v1/clients/${id}`);
-    const quota = nextQuotaBytes(current.totalBytes, plan);
+    const quota = nextQuotaBytes(Number(current.totalBytes) || 0, plan, Number(current.usedBytes) || 0);
     await this.request(cfg, 'POST', `/v1/clients/${id}/renew`, {
       days: plan.days,
       totalGb: quota / 1024 ** 3,

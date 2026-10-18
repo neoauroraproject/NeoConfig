@@ -532,7 +532,7 @@ cmd_install() {
   if [[ ! -t 0 ]] && (exec </dev/tty) 2>/dev/null; then exec </dev/tty; fi
   local src; src=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
   [[ -x "$src/node/bin/node" ]] || die "Run this from an extracted NeoConfig release."
-  echo -e "${BOLD}\n  NeoConfig installer\n${NC}"
+  echo -e "${BOLD}\n  NeoConfig installer${NC}   ${DIM}t.me/neoaurora${NC}\n"
 
   if [[ -L "$CURRENT" && -f "$ENV_FILE" ]]; then
     warn "NeoConfig is already installed. Use: neoconfig update"
@@ -629,6 +629,7 @@ cmd_install() {
     echo -e "   Login:  your existing admin account (data was moved over)"
   fi
   echo -e "\n   Manage: ${BOLD}neoconfig${NC}"
+  echo -e "   News & support: ${BOLD}https://t.me/neoaurora${NC}"
 }
 
 # ═══════════════════════════ day-to-day ═══════════════════════════
@@ -825,6 +826,7 @@ menu() {
   while :; do
     clear || true
     echo -e "${BOLD}  NeoConfig${NC} $(version)   ${DIM}$(env_get PRIMARY_DOMAIN)${NC}"
+    echo -e "  ${DIM}t.me/neoaurora · github.com/neoauroraproject/NeoConfig${NC}"
     echo    "  ─────────────────────────────────"
     echo    "   1) Status"
     echo    "   2) Diagnose (domain, SSL, services)"

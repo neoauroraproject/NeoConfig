@@ -9,6 +9,8 @@
 **Your brand's own VPN subscription app** for 3x-ui, PasarGuard and HMPanel — installable, multi-brand, with card-to-card renewal.
 
 <p>
+  <img alt="Views" src="https://komarev.com/ghpvc/?username=neoauroraproject&repo=NeoConfig&label=Views&color=orange&style=flat-square" />
+  <a href="https://t.me/neoaurora"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@neoaurora-26A5E4?style=flat-square&logo=telegram&logoColor=white" /></a>
   <a href="https://github.com/neoauroraproject/NeoConfig/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/neoauroraproject/NeoConfig?style=flat-square&color=4f5bd5&label=release" /></a>
   <img alt="Panels" src="https://img.shields.io/badge/panels-3x--ui%20·%20PasarGuard%20·%20HMPanel-111?style=flat-square" />
   <img alt="PWA" src="https://img.shields.io/badge/PWA-installable-1fa66a?style=flat-square" />
@@ -21,7 +23,9 @@
   <a href="#-اپ-کاربر">اپ کاربر</a> ·
   <a href="#-پنل-مدیریت">پنل مدیریت</a> ·
   <a href="#-hmpanel">HMPanel</a> ·
-  <a href="#-فنی">فنی</a>
+  <a href="#-فنی">فنی</a> ·
+  <a href="#-حمایت-donation">حمایت</a> ·
+  <a href="https://t.me/neoaurora">کانال تلگرام</a>
 </p>
 
 </div>
@@ -125,7 +129,7 @@
 
 ## ◈ HMPanel
 
-با یک کلید API از HMPanel، برند به همان ادمین وصل می‌شود:
+[**HMPanel**](https://github.com/neoauroraproject/hmpanel) پنل مدیریت فروش و نمایندگی ماست ([کانال](https://t.me/hmpanel)). با یک کلید API از HMPanel، برند به همان ادمین وصل می‌شود:
 
 | | |
 |---|---|
@@ -231,10 +235,32 @@ GitHub Actions نسخهٔ amd64 و arm64 را می‌سازد؛ سرورها ب�
 | [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) | رفع اشکال |
 | [API-MAPPING](docs/API-MAPPING.md) | نگاشت API پنل‌ها |
 
+## ✧ پروژه‌های دیگر
+
+| | |
+|---|---|
+| [**HMPanel**](https://github.com/neoauroraproject/hmpanel) | پنل فروش و نمایندگی برای ثنایی و پاسارگارد، با فروشگاه و ربات — NeoConfig مستقیم به آن وصل می‌شود |
+| [**NeoTemplate**](https://github.com/neoauroraproject/NeoTemplate) | قالب‌های پریمیوم صفحهٔ اشتراک برای پنل ثنایی (3x-ui) |
+
+خبرها، نسخه‌های جدید و پشتیبانی: کانال تلگرام [**@neoaurora**](https://t.me/neoaurora)
+
+## 💖 حمایت (Donation)
+
+اگر NeoConfig برایتان مفید بوده و دوست دارید توسعه‌اش ادامه پیدا کند، می‌توانید از ما حمایت کنید:
+
+If NeoConfig helps you and you'd like to support its development, you can donate via:
+
+* **USDT (BEP20):**
+  `0xacA935a5955a756BedaE4738304274EdeE0223D5`
+
 </div>
 
-<br />
+---
 
 <div align="center">
-  <sub>NeoConfig · ساخته‌شده برای فروشنده‌هایی که می‌خواهند اپ خودشان را داشته باشند</sub>
+
+Telegram Channels: [NeoAurora](https://t.me/neoaurora) / [HMPanel](https://t.me/hmpanel)
+
+<sub>Built with ❤️ for resellers who want their own app · ساخته‌شده برای فروشنده‌هایی که می‌خواهند اپ خودشان را داشته باشند</sub>
+
 </div>

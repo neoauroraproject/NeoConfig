@@ -1,6 +1,6 @@
 'use client';
 
-import { BadgeCheck, LayoutGrid, LogOut, Menu, Palette, PlugZap, Users, X } from 'lucide-react';
+import { BadgeCheck, LayoutGrid, LogOut, Menu, Palette, PlugZap, Send, Users, X } from 'lucide-react';
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { ApiError } from '@/lib/api';
 import { Me, adminApi, getToken, setToken } from './adminApi';
@@ -138,6 +138,18 @@ export function AdminApp() {
         );
       })}
       <div className="mt-auto border-t border-[var(--line)] pt-4">
+        <a
+          href="https://t.me/neoaurora"
+          target="_blank"
+          rel="noreferrer"
+          className="mb-2 flex h-10 items-center gap-3 rounded-xl px-3 text-sm text-[var(--ink-2)] hover:bg-[var(--surface-2)]"
+        >
+          <Send className="h-4 w-4" />
+          <span className="flex-1">کانال NeoAurora</span>
+          <span className="text-[11px] text-[var(--ink-3)]" dir="ltr">
+            @neoaurora
+          </span>
+        </a>
         <p className="truncate px-3 text-xs text-[var(--ink-3)]" dir="ltr">
           {me.email}
         </p>

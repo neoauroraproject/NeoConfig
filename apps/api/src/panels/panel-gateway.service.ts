@@ -115,6 +115,21 @@ export class PanelGatewayService {
     }
   }
 
+  /** HMPanel's premium store for this connection (cards, products, orders). */
+  hmStore(row: PanelConnection) {
+    if (row.type !== 'hmpanel') throw new Error('Not an HMPanel connection');
+    const cfg = this.creds(row);
+    const hm = this.hmpanel;
+    return {
+      cards: () => hm.paymentCards(cfg),
+      products: () => hm.storeProducts(cfg),
+      createOrder: (body: Parameters<HmPanelClientService['createOrder']>[1]) => hm.createOrder(cfg, body),
+      order: (id: string) => hm.getOrder(cfg, id),
+      approve: (id: string) => hm.approveOrder(cfg, id),
+      reject: (id: string, reason: string) => hm.rejectOrder(cfg, id, reason),
+    };
+  }
+
   async renew(
     row: PanelConnection,
     clientRef: string,

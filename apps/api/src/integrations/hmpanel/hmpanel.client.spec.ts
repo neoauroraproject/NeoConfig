@@ -68,4 +68,28 @@ describe('HMPanel adapter', () => {
     expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ limitIp: 2 });
     expect(r.ok).toBe(true);
   });
+
+  it('reads renewal cards, falling back to the store cards', async () => {
+    const card = { id: 'c1', bankName: 'Mellat', cardNumber: '6104337712345678', cardHolder: 'Ali' };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ surface: 'renewal', cards: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ payment: { cards: [card] } }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await new HmPanelClientService().paymentCards({ baseUrl: 'https://p.io', apiToken: 'hmp_x' })).toEqual([card]);
+    expect(fetchMock.mock.calls[0][0]).toBe('https://p.io/api/v1/premium/store/payment?surface=renewal');
+  });
+
+  it('places a renewal order on the store', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ orderId: 'o1', trackingCode: 'HM-1', status: 'UNDER_REVIEW' }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const order = await new HmPanelClientService().createOrder(
+      { baseUrl: 'https://p.io', apiToken: 'hmp_x' },
+      { productId: 'p1', name: 'Ali', paymentMethod: 'MANUAL_BANK', receiptImage: 'data:image/jpeg;base64,AA', isRenewal: true, renewClientId: 'c1' },
+    );
+    expect(order.trackingCode).toBe('HM-1');
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://p.io/api/v1/premium/store/orders');
+    expect(JSON.parse(init.body)).toMatchObject({ productId: 'p1', isRenewal: true, renewClientId: 'c1' });
+  });
 });

@@ -66,9 +66,8 @@ export function Renewals() {
 function RenewalCard({ r, onDone }: { r: AdminRenewal; onDone: () => void }) {
   const [img, setImg] = useState<string | null>(null);
   const [zoom, setZoom] = useState(false);
-  const [apply, setApply] = useState(r.canApply);
   const [note, setNote] = useState('');
-  const [busy, setBusy] = useState<'approve' | 'reject' | null>(null);
+  const [busy, setBusy] = useState<'auto' | 'manual' | 'reject' | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const pending = r.status === 'PENDING';
 
@@ -86,11 +85,11 @@ function RenewalCard({ r, onDone }: { r: AdminRenewal; onDone: () => void }) {
     };
   }, [r.id]);
 
-  async function decide(kind: 'approve' | 'reject') {
+  async function decide(kind: 'auto' | 'manual' | 'reject') {
     setBusy(kind);
     setMsg(null);
     try {
-      if (kind === 'approve') await adminApi.approve(r.id, apply, note || undefined);
+      if (kind !== 'reject') await adminApi.approve(r.id, kind === 'auto', note || undefined);
       else await adminApi.reject(r.id, note || undefined);
       onDone();
     } catch (e) {
@@ -117,6 +116,9 @@ function RenewalCard({ r, onDone }: { r: AdminRenewal; onDone: () => void }) {
             <span className="h-2.5 w-2.5 rounded-full" style={{ background: r.brand.primaryColor }} />
             <p className="font-medium">{r.displayName || r.subId}</p>
             <span className="text-xs text-[var(--ink-3)]">{r.brand.appName}</span>
+            {r.via === 'hmpanel' && (
+              <span className="rounded-full bg-[var(--surface-2)] px-2 py-0.5 text-[11px] text-[var(--ink-2)]">HMPanel{r.externalCode ? ` · ${r.externalCode}` : ''}</span>
+            )}
             <span className="ms-auto text-xs text-[var(--ink-3)]">{relativeTime(r.createdAt, 'fa')}</span>
           </div>
           <p className="mt-1 text-sm text-[var(--ink-2)]">
@@ -132,7 +134,7 @@ function RenewalCard({ r, onDone }: { r: AdminRenewal; onDone: () => void }) {
               {r.status === 'APPROVED'
                 ? r.appliedOnPanel
                   ? `روی پنل اعمال شد (${r.applyMessage})`
-                  : 'تأیید شد؛ روی پنل دستی اعمال شده'
+                  : 'تأیید شد؛ تمدید دستی توسط ادمین'
                 : 'رد شد'}
               {r.adminNote ? ` · یادداشت: ${r.adminNote}` : ''}
             </p>
@@ -153,21 +155,39 @@ function RenewalCard({ r, onDone }: { r: AdminRenewal; onDone: () => void }) {
             maxLength={300}
             placeholder="مثلاً: مبلغ واریزی کمتر از پلن است"
           />
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <label className={`inline-flex items-center gap-2 text-sm ${r.canApply ? '' : 'opacity-50'}`}>
-              <input type="checkbox" checked={apply} disabled={!r.canApply} onChange={(e) => setApply(e.target.checked)} />
-              تمدید خودکار روی پنل
-            </label>
-            {!r.canApply && <span className="text-xs text-[var(--ink-3)]">این اشتراک روی پنل‌های وصل‌شده پیدا نشد؛ دستی تمدید کن.</span>}
-            <div className="ms-auto flex gap-2">
-              <Button variant="secondary" busy={busy === 'reject'} disabled={busy !== null} onClick={() => decide('reject')}>
-                <X className="h-4 w-4" /> رد رسید
-              </Button>
-              <Button busy={busy === 'approve'} disabled={busy !== null} onClick={() => decide('approve')}>
-                <Check className="h-4 w-4" /> {apply ? 'تأیید و تمدید' : 'تأیید رسید'}
-              </Button>
-            </div>
+          {r.via === 'hmpanel' ? (
+          <>
+          <p className="mt-3 text-xs leading-6 text-[var(--ink-3)]">
+            این سفارش در فروشگاه HMPanel است{r.externalCode ? ` (کد ${r.externalCode})` : ''}؛ با تأیید، HMPanel تمدید را انجام می‌دهد و از اعتبار همان ادمین کم می‌شود. تأیید از ربات HMPanel هم اینجا خودکار ثبت می‌شود.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" busy={busy === 'reject'} disabled={busy !== null} onClick={() => decide('reject')}>
+              <X className="h-4 w-4" /> رد رسید
+            </Button>
+            <Button busy={busy === 'auto'} disabled={busy !== null} onClick={() => decide('auto')}>
+              <Check className="h-4 w-4" /> تأیید در HMPanel
+            </Button>
           </div>
+          </>
+          ) : (
+          <>
+          <p className="mt-3 text-xs leading-6 text-[var(--ink-3)]">
+            <b>تمدید خودکار</b>: همین حالا روی پنل تمدید می‌شود. <b>تمدید دستی</b>: فقط رسید تأیید می‌شود و خودت روی پنل تمدید می‌کنی.
+            {!r.canApply && ' — موقع ثبت، این اشتراک روی پنل‌ها پیدا نشد؛ تمدید خودکار دوباره جست‌وجو می‌کند.'}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" busy={busy === 'reject'} disabled={busy !== null} onClick={() => decide('reject')}>
+              <X className="h-4 w-4" /> رد رسید
+            </Button>
+            <Button variant="secondary" busy={busy === 'manual'} disabled={busy !== null} onClick={() => decide('manual')}>
+              <Check className="h-4 w-4" /> تأیید، تمدید دستی
+            </Button>
+            <Button busy={busy === 'auto'} disabled={busy !== null} onClick={() => decide('auto')}>
+              <Check className="h-4 w-4" /> تأیید و تمدید خودکار
+            </Button>
+          </div>
+          </>
+          )}
           {msg && (
             <p role="alert" className="mt-3 text-sm text-[#d4373f]">
               {msg}

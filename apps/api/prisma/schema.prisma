@@ -118,6 +118,10 @@ model Brand {
   accentColor     String  @default("#FF6A1A")
   /// mist | graphite | sage | moss | pearl
   theme           String  @default("mist")
+  /// local = receipts reviewed in NeoConfig; hmpanel = sent to the HMPanel store (its bot approves)
+  renewalVia      String  @default("local")
+  /// HMPanel connection used for the store, cards and products
+  renewalPanelId  String?
   /// Extra themes the customer may switch to in the app menu
   themeChoices    String[] @default([])
   defaultLocale   String  @default("fa")
@@ -331,6 +335,10 @@ model RenewalRequest {
   payerNote      String?
   receiptMime    String
   receiptData    Bytes
+  /// HMPanel store order when the brand renews through HMPanel
+  externalOrderId  String?
+  externalCode     String?
+  externalSyncedAt DateTime?
   /// sha256 of the image, to catch the same receipt sent twice
   receiptHash    String?
   status         RenewalStatus @default(PENDING)
@@ -348,6 +356,7 @@ model RenewalRequest {
   @@index([brandId, status, createdAt])
   @@index([subId])
   @@index([brandId, receiptHash])
+  @@index([status, externalOrderId])
 }
 
 model PushDevice {

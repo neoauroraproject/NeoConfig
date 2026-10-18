@@ -52,3 +52,61 @@ describe('XuiClientService.fetchSubscriptionInfo', () => {
     ).rejects.toThrow(/Redirects/);
   });
 });
+
+describe('XuiClientService on 3x-ui 3.x (clients outside inbounds)', () => {
+  const cfg = { baseUrl: 'https://p.example.com/base', apiToken: 'tok' };
+  const GB = 1024 ** 3;
+  const row = {
+    id: 1,
+    email: 'ali',
+    subId: 'pZSfex',
+    totalGB: 50 * GB,
+    expiryTime: Date.now() + 5 * 86_400_000,
+    enable: true,
+    limitIp: 1,
+    inboundIds: [3, 5],
+    traffic: { up: GB, down: 9 * GB, enable: true },
+  };
+
+  function panel() {
+    const calls: Array<{ url: string; body?: unknown }> = [];
+    const json = (obj: unknown) => new Response(JSON.stringify({ success: true, obj }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        if (url.endsWith('/inbounds/list')) return json([{ id: 3, protocol: 'vless', settings: '{"clients":[]}' }]);
+        if (url.endsWith('/clients/list')) return json([row]);
+        if (url.includes('/clients/onlines')) return json(['ali']);
+        if (url.includes('/clients/traffic/')) return json({ lastOnline: 1_700_000_000_000 });
+        if (url.includes('/clients/get/')) return json({ ...row, tgId: 42 });
+        return json(null);
+      }),
+    );
+    return calls;
+  }
+
+  it('counts and finds clients through clients/list', async () => {
+    panel();
+    const svc = new XuiClientService();
+    expect(await svc.stats(cfg)).toEqual({ clients: 1, online: 1 });
+    const found = await svc.findBySubId(cfg, 'pZSfex');
+    expect(found?.snapshot.totalUsedBytes).toBe(10 * GB);
+    expect(found?.snapshot.remainingBytes).toBe(40 * GB);
+    expect(found?.online).toBe(true);
+    expect(found?.renewable).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it('renews with the full client record via clients/update', async () => {
+    const calls = panel();
+    const res = await new XuiClientService().renewBySubId(cfg, 'pZSfex', { days: 30, gb: 20, users: 2, mode: 'add' });
+    expect(res.ok).toBe(true);
+    const update = calls.find((c) => c.url.includes('/clients/update/ali'));
+    expect(update?.body).toMatchObject({ email: 'ali', tgId: 42, inboundIds: [3, 5], totalGB: 70 * GB, limitIp: 2, enable: true });
+    expect(update?.body).not.toHaveProperty('traffic');
+    expect(calls.some((c) => c.url.includes('resetTraffic'))).toBe(false);
+    vi.unstubAllGlobals();
+  });
+});

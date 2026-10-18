@@ -13,6 +13,7 @@ import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../auth/auth.types';
 import { brandScope, isOrgAdmin, requireOrgAdmin } from '../common/access/scope';
 import { encryptSecret } from '../common/crypto/secret.crypto';
+import { PanelGatewayService } from '../panels/panel-gateway.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { SslQueueService } from './ssl-queue.service';
@@ -27,6 +28,8 @@ export interface RenewalPlan {
   users: number;
   /** add = extend time and data; reset = new period, usage zeroed. */
   mode: 'add' | 'reset';
+  /** HMPanel store product this plan orders when the brand renews through HMPanel. */
+  productId?: string;
 }
 
 /** Plans as they arrive from the admin form (new fields may be missing). */
@@ -44,7 +47,7 @@ const EDITABLE = [
   'appName', 'shortName', 'tagline', 'logoUrl', 'iconUrl', 'primaryColor', 'accentColor',
   'theme', 'defaultLocale', 'supportUrl', 'supportTelegram', 'contactEmail', 'allowCopyLink',
   'renewalEnabled', 'cardNumber', 'cardHolder', 'bankName', 'renewalNote', 'expiryRemindersEnabled',
-  'telegramChatId',
+  'telegramChatId', 'renewalVia', 'renewalPanelId',
 ] as const;
 
 export type BrandInput = Partial<Record<(typeof EDITABLE)[number], string | boolean | null>> & {
@@ -69,6 +72,7 @@ export class BrandsService {
     private readonly config: ConfigService,
     private readonly telegram: TelegramService,
     private readonly ssl: SslQueueService,
+    private readonly gateway: PanelGatewayService,
   ) {}
 
   // ---------- public ----------
@@ -98,7 +102,9 @@ export class BrandsService {
 
   toPublic(b: Brand | null) {
     // Plans without a price are drafts: kept in the admin, hidden from customers.
-    const plans = b ? parsePlans(b.plansJson).filter((p) => p.price.trim()) : [];
+    const plans = b
+      ? parsePlans(b.plansJson).filter((p) => p.price.trim() && (b.renewalVia !== 'hmpanel' || p.productId))
+      : [];
     const renewal = b?.renewalEnabled && b.cardNumber && plans.length
       ? {
           cardNumber: b.cardNumber,
@@ -194,6 +200,13 @@ export class BrandsService {
     const brand = await this.mustOwn(user, id);
     const admin = isOrgAdmin(user);
     const data: Prisma.BrandUncheckedUpdateInput = { ...this.editable(input) };
+    if (typeof data.renewalPanelId === 'string') {
+      const ok = await this.prisma.panelConnection.findFirst({ where: { id: data.renewalPanelId, orgId: brand.orgId, type: 'hmpanel' } });
+      if (!ok) throw new BadRequestException('Choose one of your HMPanel connections');
+    }
+    if (data.renewalVia === 'hmpanel' && !(data.renewalPanelId ?? brand.renewalPanelId)) {
+      throw new BadRequestException('Pick the HMPanel connection before sending renewals to its store');
+    }
 
     if (input.plans) data.plansJson = JSON.stringify(cleanPlans(input.plans));
     if (input.themeChoices) data.themeChoices = themeList('mist', input.themeChoices).filter((t) => input.themeChoices!.includes(t));
@@ -345,6 +358,8 @@ export class BrandsService {
       if (v === undefined) continue;
       if (k === 'allowCopyLink' || k === 'renewalEnabled' || k === 'expiryRemindersEnabled') out[k] = Boolean(v);
       else if (k === 'theme') out[k] = THEMES.includes(v as never) ? v : 'mist';
+      else if (k === 'renewalVia') out[k] = v === 'hmpanel' ? 'hmpanel' : 'local';
+      else if (k === 'renewalPanelId') out[k] = typeof v === 'string' && v.trim() ? v.trim() : null;
       else if (k === 'primaryColor' || k === 'accentColor') {
         if (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v)) out[k] = v;
       } else if (k === 'appName' || k === 'shortName') {
@@ -399,6 +414,48 @@ export class BrandsService {
     return b?.logoData && b.logoMime ? { data: Buffer.from(b.logoData), mime: b.logoMime } : null;
   }
 
+  // ---------- HMPanel store ----------
+
+  /** HMPanel connections this brand may use (its own panels, or the org's when none are picked). */
+  async hmpanelPanels(user: AuthUser, id: string) {
+    const brand = await this.mustOwn(user, id);
+    const own = await this.prisma.brand.findUnique({ where: { id }, select: { panels: { select: { id: true } } } });
+    const ids = own?.panels.map((p) => p.id) ?? [];
+    const panels = await this.prisma.panelConnection.findMany({
+      where: { orgId: brand.orgId, type: 'hmpanel', ...(ids.length ? { id: { in: ids } } : {}) },
+      select: { id: true, name: true, baseUrl: true },
+      orderBy: { name: 'asc' },
+    });
+    return panels.map((p) => ({ id: p.id, name: p.name, host: safeHost(p.baseUrl) }));
+  }
+
+  private async hmpanelFor(user: AuthUser, id: string, panelId: string) {
+    const allowed = await this.hmpanelPanels(user, id);
+    if (!allowed.some((p) => p.id === panelId)) throw new NotFoundException('HMPanel connection not found for this brand');
+    const row = await this.prisma.panelConnection.findUnique({ where: { id: panelId } });
+    if (!row) throw new NotFoundException('HMPanel connection not found');
+    return this.gateway.hmStore(row);
+  }
+
+  async hmpanelCards(user: AuthUser, id: string, panelId: string) {
+    const store = await this.hmpanelFor(user, id, panelId);
+    try {
+      return await store.cards();
+    } catch (err) {
+      throw new BadRequestException(hmError(err));
+    }
+  }
+
+  async hmpanelProducts(user: AuthUser, id: string, panelId: string) {
+    const store = await this.hmpanelFor(user, id, panelId);
+    try {
+      const products = await store.products();
+      return products.filter((p) => p.renewable && p.status === 'active' && !p.isTest);
+    } catch (err) {
+      throw new BadRequestException(hmError(err));
+    }
+  }
+
   async telegramTest(user: AuthUser, id: string) {
     const brand = await this.mustOwn(user, id);
     try {
@@ -450,6 +507,8 @@ export class BrandsService {
       accentColor: r.accentColor,
       theme: r.theme,
       themeChoices: r.themeChoices,
+      renewalVia: r.renewalVia,
+      renewalPanelId: r.renewalPanelId,
       defaultLocale: r.defaultLocale,
       supportUrl: r.supportUrl,
       supportTelegram: r.supportTelegram,
@@ -504,6 +563,7 @@ function cleanPlans(plans: PlanInput[]): RenewalPlan[] {
       price: String(p.price ?? '').trim().slice(0, 40),
       users: Math.max(0, Math.min(20, Math.round(Number(p.users) || 0))),
       mode: p.mode === 'reset' ? 'reset' : 'add',
+      ...(typeof p.productId === 'string' && p.productId.trim() ? { productId: p.productId.trim().slice(0, 64) } : {}),
     }));
 }
 
@@ -520,4 +580,22 @@ export function normalizeHost(raw?: string | null): string | null {
   let v = raw.trim().toLowerCase();
   v = v.replace(/^https?:\/\//, '').split('/')[0].split(':')[0].replace(/\.$/, '');
   return v || null;
+}
+
+function safeHost(url: string) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+/** HMPanel store errors in words an admin can act on. */
+export function hmError(err: unknown) {
+  const status = (err as { status?: number })?.status;
+  const msg = err instanceof Error ? err.message : 'HMPanel request failed';
+  if (status === 404) return 'HMPanel premium store is not installed on this panel';
+  if (status === 403) return `HMPanel refused: ${msg} (needs an active Premium license, the store module and the store.* scopes)`;
+  if (status === 401) return 'HMPanel rejected the API key';
+  return msg;
 }

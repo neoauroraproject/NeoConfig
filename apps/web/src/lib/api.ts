@@ -48,6 +48,8 @@ export type RenewalPlan = {
   /** Allowed simultaneous users; 0 = unchanged. */
   users: number;
   mode: 'add' | 'reset';
+  /** HMPanel store product (renewals through HMPanel). */
+  productId?: string;
 };
 
 export const THEME_IDS = ['mist', 'graphite', 'sage', 'moss', 'pearl'] as const;

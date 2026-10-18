@@ -61,24 +61,23 @@ export function parseCallback(data: string | undefined): CallbackAction | null {
 
 export type Markup = { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> };
 
+/**
+ * Two ways to approve: auto renews on the panel now; manual only confirms the
+ * payment and the admin renews by hand. After a panel refusal (`manual`), auto is dropped.
+ */
 export function reviewKeyboard(id: string, opts: { manual?: boolean } = {}): Markup {
   const reasons = (Object.keys(REJECT_REASONS) as ReasonKey[]).map((k) => ({
     text: `✖️ ${REJECT_REASONS[k].button}`,
     callback_data: `nc:${k}:${id}`,
   }));
+  const approve = opts.manual
+    ? [{ text: '☑️ تأیید، تمدید دستی', callback_data: `nc:m:${id}` }]
+    : [
+        { text: '✅ تأیید + تمدید خودکار', callback_data: `nc:a:${id}` },
+        { text: '☑️ تأیید، تمدید دستی', callback_data: `nc:m:${id}` },
+      ];
   return {
-    inline_keyboard: [
-      opts.manual
-        ? [
-            { text: '✅ تأیید (تمدید دستی)', callback_data: `nc:m:${id}` },
-            { text: '❌ رد', callback_data: `nc:r:${id}` },
-          ]
-        : [
-            { text: '✅ تأیید و تمدید', callback_data: `nc:a:${id}` },
-            { text: '❌ رد', callback_data: `nc:r:${id}` },
-          ],
-      reasons,
-    ],
+    inline_keyboard: [approve, [{ text: '❌ رد', callback_data: `nc:r:${id}` }, ...reasons]],
   };
 }
 
@@ -149,8 +148,8 @@ export function receiptCaption(appName: string, r: RenewalNotice): string {
     } else {
       checks.push('✅ تصویر رسید تکراری نیست');
     }
-    if (v.canApply === false) checks.push('⚠️ اکانت روی پنل پیدا نشد؛ بعد از تأیید دستی تمدید کنید');
-    else if (v.canApply) checks.push('✅ با تأیید، روی پنل خودکار تمدید می‌شود');
+    if (v.canApply === false) checks.push('⚠️ اکانت روی پنل پیدا نشد؛ «تمدید خودکار» دوباره جست‌وجو می‌کند، وگرنه دستی تمدید کنید');
+    else if (v.canApply) checks.push('✅ اکانت روی پنل پیدا شد؛ تمدید خودکار آماده است');
     if (v.pendingCount && v.pendingCount > 1) checks.push(`⚠️ ${v.pendingCount} درخواست باز برای این اشتراک`);
     if (v.approvedBefore) {
       const last = v.lastApprovedAt ? ` · آخرین: ${faDate(v.lastApprovedAt)}` : '';
@@ -178,7 +177,7 @@ export function decisionLine(d: { approved: boolean; by: string; appliedOnPanel:
   const note = d.note ? `\n📝 ${esc(d.note)}` : '';
   if (!d.approved) return `❌ <b>رد شد</b> توسط ${esc(d.by)}${note}`;
   const applied =
-    d.appliedOnPanel === null ? ' — روی پنل اعمال نشد، دستی تمدید کنید' : d.appliedOnPanel ? ' — روی پنل اعمال شد' : ' — روی پنل اعمال نشد، دستی تمدید کنید';
+    d.appliedOnPanel === null ? ' — تمدید دستی توسط ادمین' : d.appliedOnPanel ? ' — روی پنل خودکار تمدید شد' : ' — روی پنل اعمال نشد، دستی تمدید کنید';
   return `✅ <b>تأیید شد</b> توسط ${esc(d.by)}${applied}${note}`;
 }
 

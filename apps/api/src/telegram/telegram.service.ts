@@ -34,7 +34,7 @@ export class TelegramService {
 
   async renewalReceived(t: TelegramTarget, r: RenewalNotice, receipt?: { mime: string; data: Buffer }) {
     const text = this.receiptCaption(t, r);
-    const markup = reviewKeyboard(r.id, { manual: r.review?.canApply === false });
+    const markup = reviewKeyboard(r.id);
     if (receipt) return this.sendPhoto(t, text, receipt, markup);
     return this.sendMessage(t, text, false, markup);
   }

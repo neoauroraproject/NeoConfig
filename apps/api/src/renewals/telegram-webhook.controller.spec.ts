@@ -53,7 +53,7 @@ describe('Telegram webhook', () => {
     const [, message, line] = telegram.markDecided.mock.calls[0];
     expect(message).toMatchObject({ chatId: -100123, messageId: 9, isPhoto: true, caption: 'Receipt &lt;b&gt;' });
     expect(line).toContain('تأیید شد');
-    expect(line).toContain('روی پنل اعمال شد');
+    expect(line).toContain('روی پنل خودکار تمدید شد');
   });
 
   it('reports failures back on the button', async () => {

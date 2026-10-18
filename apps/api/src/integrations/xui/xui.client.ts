@@ -254,35 +254,16 @@ export class XuiClientService {
     cfg: XuiConnectionConfig,
     subId: string,
   ): Promise<XuiAccountMatch | null> {
-    const inbounds = await this.listInboundsSafe(cfg);
-    if (inbounds) {
-      const matches = collectClients(inbounds).filter(
-        (m) => m.client.subId === subId || m.client.email === subId,
-      );
-      if (!matches.length) return null;
-      const online = await this.onlineEmails(cfg).catch(() => null);
-      return aggregateMatches(subId, matches, online);
+    const source = await this.clientSource(cfg);
+    const matches = source.matches.filter((m) => m.client.subId === subId || m.client.email === subId);
+    if (!matches.length) return null;
+    const online = await this.onlineEmails(cfg, source.kind).catch(() => null);
+    if (source.kind === 'v3') {
+      // clients/list carries no lastOnline; one traffic call fills it in.
+      const traffic = await this.getClientTraffic(cfg, matches[0].client.email).catch(() => null);
+      if (traffic?.lastOnline && matches[0].stat) matches[0].stat.lastOnline = Number(traffic.lastOnline);
     }
-
-    // 3.x API: flat client list + per-email traffic
-    const clients = (await this.listClients(cfg)) as Array<Record<string, unknown>>;
-    const match = clients.find(
-      (c) => String(c.subId ?? '') === subId || String(c.email ?? '') === subId,
-    );
-    if (!match?.email) return null;
-    const traffic = await this.getClientTraffic(cfg, String(match.email));
-    if (!traffic) return null;
-    return {
-      subId,
-      displayName: String(match.comment || match.email),
-      snapshot: normalizeFromClientTraffic(traffic, {
-        displayName: String(match.comment || match.email),
-        subscriptionId: subId,
-      }),
-      online: null,
-      lastOnlineAt: traffic.lastOnline ? new Date(traffic.lastOnline).toISOString() : null,
-      renewable: false,
-    };
+    return aggregateMatches(subId, matches, online);
   }
 
   /** Apply renewal terms to every client sharing the subId (see RenewalTerms). */
@@ -291,43 +272,41 @@ export class XuiClientService {
     subId: string,
     plan: RenewalTerms,
   ): Promise<{ ok: boolean; message: string }> {
-    const inbounds = await this.listInboundsSafe(cfg);
-    if (!inbounds) {
-      return { ok: false, message: 'This panel version does not expose inbounds/list' };
-    }
-    const matches = collectClients(inbounds).filter((m) => m.client.subId === subId);
+    const source = await this.clientSource(cfg, true);
+    const matches = source.matches.filter((m) => m.client.subId === subId || m.client.email === subId);
     if (!matches.length) return { ok: false, message: 'Client not found on panel' };
 
     const session = await this.authenticate(cfg);
     const now = Date.now();
     for (const { inbound, client } of matches) {
       const current = Number(client.expiryTime) || 0;
-      const updated: XuiInboundClient = {
-        ...client,
+      const changes: Partial<XuiInboundClient> = {
         enable: true,
         // A negative expiry is "starts on first use"; a renewal makes it concrete.
         expiryTime: nextExpiryMs(current < 0 ? 0 : current, plan.days, now),
         totalGB: nextQuotaBytes(Number(client.totalGB) || 0, plan),
       };
-      if (plan.users > 0) updated.limitIp = plan.users;
-      const key = clientKey(String(inbound.protocol ?? ''), client);
-      const res = await this.request<unknown>(
-        cfg,
-        'POST',
-        `/panel/api/inbounds/updateClient/${encodeURIComponent(key)}`,
-        {
-          session,
-          body: { id: inbound.id, settings: JSON.stringify({ clients: [updated] }) },
-        },
-      );
+      if (plan.users > 0) changes.limitIp = plan.users;
+
+      const res =
+        source.kind === 'v3'
+          ? await this.updateClientV3(cfg, session, client, changes)
+          : await this.request<unknown>(
+              cfg,
+              'POST',
+              `/panel/api/inbounds/updateClient/${encodeURIComponent(clientKey(String(inbound.protocol ?? ''), client))}`,
+              { session, body: { id: inbound.id, settings: JSON.stringify({ clients: [{ ...client, ...changes }] }) } },
+            );
       if (!res.success) {
-        return { ok: false, message: res.msg || `updateClient failed for ${client.email}` };
+        return { ok: false, message: res.msg || `Update failed for ${client.email}` };
       }
       if (plan.mode === 'reset') {
         const reset = await this.request<unknown>(
           cfg,
           'POST',
-          `/panel/api/inbounds/${inbound.id}/resetClientTraffic/${encodeURIComponent(client.email)}`,
+          source.kind === 'v3'
+            ? `/panel/api/clients/resetTraffic/${encodeURIComponent(client.email)}`
+            : `/panel/api/inbounds/${inbound.id}/resetClientTraffic/${encodeURIComponent(client.email)}`,
           { session },
         );
         if (!reset.success) {
@@ -336,18 +315,81 @@ export class XuiClientService {
       }
     }
     this.cache.delete(cacheKey(cfg));
+    this.v3cache.delete(cacheKey(cfg));
     return { ok: true, message: `Renewed ${matches.length} client(s)` };
+  }
+
+  /**
+   * 3x-ui 3.x replaces the whole client row on update, so send the full record
+   * (from clients/get when available, else the clients/list row) with our changes.
+   */
+  private async updateClientV3(
+    cfg: XuiConnectionConfig,
+    session: { cookie?: string; bearer?: string },
+    client: XuiInboundClient,
+    changes: Partial<XuiInboundClient>,
+  ) {
+    const got = await this.request<Record<string, unknown>>(
+      cfg,
+      'GET',
+      `/panel/api/clients/get/${encodeURIComponent(client.email)}`,
+      { session },
+    ).catch(() => null);
+    const obj = got?.success && got.obj && typeof got.obj === 'object' ? got.obj : null;
+    const full =
+      obj && 'client' in obj && obj.client && typeof obj.client === 'object' ? (obj.client as Record<string, unknown>) : obj;
+    const base: Record<string, unknown> = { ...client, ...(full && 'email' in full ? full : {}) };
+    delete base.traffic;
+    return this.request<unknown>(cfg, 'POST', `/panel/api/clients/update/${encodeURIComponent(client.email)}`, {
+      session,
+      body: { ...base, ...changes },
+    });
   }
 
   /** Lightweight stats for the admin connection card. */
   async stats(cfg: XuiConnectionConfig): Promise<{ clients: number; online: number | null }> {
-    const inbounds = await this.listInboundsSafe(cfg, true);
-    const online = await this.onlineEmails(cfg).catch(() => null);
-    if (inbounds) {
-      return { clients: collectClients(inbounds).length, online: online?.size ?? null };
+    const source = await this.clientSource(cfg, true);
+    const online = await this.onlineEmails(cfg, source.kind).catch(() => null);
+    // A 3.x client attached to several inbounds is one row; classic ones repeat per inbound.
+    const unique = new Set(source.matches.map((m) => m.client.subId || m.client.email));
+    return { clients: unique.size, online: online?.size ?? null };
+  }
+
+  /**
+   * Where this panel keeps its clients. Classic 3x-ui (2.x) embeds them in each
+   * inbound's settings; 3.x keeps them in their own table (clients/list) and the
+   * inbounds come back without clients.
+   */
+  private async clientSource(
+    cfg: XuiConnectionConfig,
+    fresh = false,
+  ): Promise<{ kind: 'classic' | 'v3'; matches: ClientMatch[] }> {
+    const inbounds = await this.listInboundsSafe(cfg, fresh);
+    const classic = inbounds ? collectClients(inbounds) : [];
+    if (classic.length) return { kind: 'classic', matches: classic };
+    const v3 = await this.listClientsV3(cfg, fresh);
+    if (v3) return { kind: 'v3', matches: v3 };
+    return { kind: 'classic', matches: classic };
+  }
+
+  private v3cache = new Map<string, { at: number; matches: ClientMatch[] }>();
+
+  private async listClientsV3(cfg: XuiConnectionConfig, fresh = false): Promise<ClientMatch[] | null> {
+    const key = cacheKey(cfg);
+    const hit = this.v3cache.get(key);
+    if (!fresh && hit && Date.now() - hit.at < 20_000) return hit.matches;
+    const session = await this.authenticate(cfg);
+    let res: XuiMsg<Array<Record<string, unknown>>>;
+    try {
+      res = await this.request<Array<Record<string, unknown>>>(cfg, 'GET', '/panel/api/clients/list', { session });
+    } catch (err) {
+      if (err instanceof PanelHttpError && err.status === 404) return null;
+      throw err;
     }
-    const clients = await this.listClients(cfg);
-    return { clients: clients.length, online: online?.size ?? null };
+    if (!res.success || !Array.isArray(res.obj)) return null;
+    const matches = res.obj.filter((c) => c && c.email).map(v3Match);
+    this.v3cache.set(key, { at: Date.now(), matches });
+    return matches;
   }
 
   private cache = new Map<string, { at: number; inbounds: XuiInbound[] }>();
@@ -374,12 +416,15 @@ export class XuiClientService {
     return inbounds;
   }
 
-  private async onlineEmails(cfg: XuiConnectionConfig): Promise<Set<string>> {
+  private async onlineEmails(cfg: XuiConnectionConfig, kind: 'classic' | 'v3' = 'classic'): Promise<Set<string>> {
     const session = await this.authenticate(cfg);
-    const res = await this.request<string[] | null>(cfg, 'POST', '/panel/api/inbounds/onlines', {
-      session,
-    });
-    return new Set(Array.isArray(res.obj) ? res.obj : []);
+    const paths =
+      kind === 'v3' ? ['/panel/api/clients/onlines', '/panel/api/inbounds/onlines'] : ['/panel/api/inbounds/onlines'];
+    for (const path of paths) {
+      const res = await this.request<string[] | null>(cfg, 'POST', path, { session }).catch(() => null);
+      if (res?.success) return new Set(Array.isArray(res.obj) ? res.obj : []);
+    }
+    throw new Error('onlines unavailable');
   }
 
   private async authenticate(cfg: XuiConnectionConfig): Promise<{
@@ -556,7 +601,9 @@ export function collectClients(inbounds: XuiInbound[]): ClientMatch[] {
   for (const inbound of inbounds) {
     let clients: XuiInboundClient[] = [];
     try {
-      const settings = JSON.parse(inbound.settings || '{}') as { clients?: XuiInboundClient[] };
+      // A JSON string on 2.x; some builds already return it parsed.
+      const raw = inbound.settings as unknown;
+      const settings = (typeof raw === 'string' ? JSON.parse(raw || '{}') : (raw ?? {})) as { clients?: XuiInboundClient[] };
       clients = Array.isArray(settings.clients) ? settings.clients : [];
     } catch {
       clients = [];
@@ -568,6 +615,25 @@ export function collectClients(inbounds: XuiInbound[]): ClientMatch[] {
     }
   }
   return out;
+}
+
+/** A 3.x clients/list row in the same shape as an inbound client + its traffic stat. */
+function v3Match(c: Record<string, unknown>): ClientMatch {
+  const traffic = (c.traffic ?? {}) as { up?: number; down?: number; enable?: boolean; lastOnline?: number };
+  const client = { ...c, email: String(c.email), subId: c.subId ? String(c.subId) : undefined } as XuiInboundClient;
+  return {
+    inbound: { id: 0 },
+    client,
+    stat: {
+      email: client.email,
+      up: Number(traffic.up) || 0,
+      down: Number(traffic.down) || 0,
+      total: Number(c.totalGB) || 0,
+      expiryTime: Number(c.expiryTime) || 0,
+      enable: c.enable !== false && traffic.enable !== false,
+      lastOnline: Number(traffic.lastOnline) || 0,
+    },
+  };
 }
 
 /** Mirrors the 3x-ui sub page: traffic is summed, any unlimited quota wins, earliest expiry wins. */

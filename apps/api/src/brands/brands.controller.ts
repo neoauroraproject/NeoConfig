@@ -26,6 +26,7 @@ class PlanDto {
   @IsString() @MaxLength(40) price!: string;
   @IsOptional() @IsNumber() users?: number;
   @IsOptional() @IsIn(['add', 'reset']) mode?: string;
+  @IsOptional() @IsString() @MaxLength(64) productId?: string;
 }
 
 class LogoDto {
@@ -59,6 +60,8 @@ class BrandDto {
   @IsOptional() @IsBoolean() expiryRemindersEnabled?: boolean;
   @IsOptional() @IsString() @MaxLength(200) telegramBotToken?: string;
   @IsOptional() @IsString() @MaxLength(64) telegramChatId?: string | null;
+  @IsOptional() @IsIn(['local', 'hmpanel']) renewalVia?: string;
+  @IsOptional() @IsString() @MaxLength(64) renewalPanelId?: string | null;
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => PlanDto) plans?: PlanDto[];
   @IsOptional() @IsArray() @IsString({ each: true }) panelIds?: string[];
 }
@@ -121,6 +124,21 @@ export class BrandsController {
   @Post(':id/domains/:domainId/ssl')
   issueSsl(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('domainId') domainId: string) {
     return this.brands.issueSsl(user, id, domainId);
+  }
+
+  @Get(':id/hmpanel')
+  hmpanelPanels(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.brands.hmpanelPanels(user, id);
+  }
+
+  @Get(':id/hmpanel/:panelId/cards')
+  hmpanelCards(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('panelId') panelId: string) {
+    return this.brands.hmpanelCards(user, id, panelId);
+  }
+
+  @Get(':id/hmpanel/:panelId/products')
+  hmpanelProducts(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('panelId') panelId: string) {
+    return this.brands.hmpanelProducts(user, id, panelId);
   }
 
   @Post(':id/telegram/test')

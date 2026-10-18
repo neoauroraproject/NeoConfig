@@ -14,6 +14,8 @@ export type AdminBrand = {
   accentColor: string;
   theme: ThemeId;
   themeChoices: ThemeId[];
+  renewalVia: 'local' | 'hmpanel';
+  renewalPanelId: string | null;
   defaultLocale: string;
   supportUrl: string | null;
   supportTelegram: string | null;
@@ -93,10 +95,22 @@ export type AdminRenewal = {
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   adminNote: string | null;
   canApply: boolean;
+  via: 'local' | 'hmpanel';
+  externalCode: string | null;
   appliedOnPanel: boolean | null;
   applyMessage: string | null;
   createdAt: string;
   decidedAt: string | null;
+};
+
+export type HmCard = { id: string; bankName: string | null; cardNumber: string; cardHolder: string | null };
+export type HmProduct = {
+  id: string;
+  name: string;
+  priceToman: number | null;
+  trafficBytes: number;
+  durationDays: number;
+  ipLimitOptions?: number[];
 };
 
 export type Member = {
@@ -161,6 +175,11 @@ export const adminApi = {
     request<{ ok: boolean; buttons?: boolean; buttonsMessage?: string }>(`/api/v1/admin/brands/${id}/telegram/test`, { method: 'POST', token: tk() }),
   uploadLogo: (id: string, dataUrl: string) =>
     request<AdminBrand>(`/api/v1/admin/brands/${id}/logo`, { method: 'POST', token: tk(), body: json({ dataUrl }) }),
+  hmpanelPanels: (id: string) =>
+    request<Array<{ id: string; name: string; host: string }>>(`/api/v1/admin/brands/${id}/hmpanel`, { token: tk() }),
+  hmpanelCards: (id: string, panelId: string) => request<HmCard[]>(`/api/v1/admin/brands/${id}/hmpanel/${panelId}/cards`, { token: tk() }),
+  hmpanelProducts: (id: string, panelId: string) =>
+    request<HmProduct[]>(`/api/v1/admin/brands/${id}/hmpanel/${panelId}/products`, { token: tk() }),
   removeLogo: (id: string) => request<AdminBrand>(`/api/v1/admin/brands/${id}/logo`, { method: 'DELETE', token: tk() }),
   broadcast: (id: string, title: string, body: string) =>
     request<{ sent: number; total: number }>(`/api/v1/admin/brands/${id}/push`, {

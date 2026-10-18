@@ -29,6 +29,45 @@ export interface HmPanelClient {
   lastSyncedAt: string | null;
 }
 
+export interface HmPanelCard {
+  id: string;
+  bankName: string | null;
+  cardNumber: string;
+  cardHolder: string | null;
+  iban?: string | null;
+  instructions?: string | null;
+}
+
+export interface HmPanelProduct {
+  id: string;
+  name: string;
+  kind: string;
+  priceToman: number | null;
+  priceUsd?: number | null;
+  trafficBytes: number;
+  durationDays: number;
+  status: string;
+  visible: boolean;
+  renewable: boolean;
+  isTest: boolean;
+  ipLimitOptions?: number[];
+  category?: { id: string; name: string } | null;
+}
+
+export interface HmPanelOrder {
+  id?: string;
+  orderId?: string;
+  trackingCode: string;
+  status: string;
+  rejectReason?: string | null;
+  provisionError?: string | null;
+  payment?: { rejectReason?: string | null } | null;
+}
+
+/** Store order states that mean the renewal went through / was refused. */
+export const HM_ORDER_DONE = new Set(['APPROVED', 'PROVISIONING', 'ACTIVE', 'RENEWED']);
+export const HM_ORDER_REFUSED = new Set(['REJECTED', 'CANCELLED', 'EXPIRED']);
+
 export class HmPanelHttpError extends Error {
   constructor(
     message: string,
@@ -89,6 +128,51 @@ export class HmPanelClientService {
       });
     }
     return { ok: true, message: `Renewed on HMPanel${note}` };
+  }
+
+  // ---------- Premium store (module `store`) ----------
+
+  /** Cards the admin's store and bot show for renewals (falls back to the store's general cards). */
+  async paymentCards(cfg: HmPanelConfig): Promise<HmPanelCard[]> {
+    type Payment = { cards?: HmPanelCard[]; payment?: { cards?: HmPanelCard[] } };
+    const read = (p: Payment) => p.cards ?? p.payment?.cards ?? [];
+    const renewal = await this.request<Payment>(cfg, 'GET', '/v1/premium/store/payment?surface=renewal').catch(() => null);
+    if (renewal && read(renewal).length) return read(renewal);
+    return read(await this.request<Payment>(cfg, 'GET', '/v1/premium/store/payment'));
+  }
+
+  async storeProducts(cfg: HmPanelConfig): Promise<HmPanelProduct[]> {
+    const r = await this.request<HmPanelProduct[] | { data?: HmPanelProduct[] }>(cfg, 'GET', '/v1/premium/store/products?kind=VPN');
+    return Array.isArray(r) ? r : r.data ?? [];
+  }
+
+  /** Storefront checkout on the admin's own store: HMPanel's bot and panel then review it. */
+  async createOrder(
+    cfg: HmPanelConfig,
+    body: {
+      productId: string;
+      name: string;
+      paymentMethod: 'MANUAL_BANK';
+      receiptText?: string;
+      receiptImage: string;
+      isRenewal: true;
+      renewClientId: string;
+      limitIp?: number;
+    },
+  ) {
+    return this.request<HmPanelOrder>(cfg, 'POST', '/v1/premium/store/orders', body);
+  }
+
+  async getOrder(cfg: HmPanelConfig, id: string) {
+    return this.request<HmPanelOrder>(cfg, 'GET', `/v1/premium/store/orders/${encodeURIComponent(id)}`);
+  }
+
+  async approveOrder(cfg: HmPanelConfig, id: string) {
+    return this.request<HmPanelOrder>(cfg, 'POST', `/v1/premium/store/orders/${encodeURIComponent(id)}/approve`, {});
+  }
+
+  async rejectOrder(cfg: HmPanelConfig, id: string, reason: string) {
+    return this.request<HmPanelOrder>(cfg, 'POST', `/v1/premium/store/orders/${encodeURIComponent(id)}/reject`, { reason });
   }
 
   private async request<T>(cfg: HmPanelConfig, method: string, path: string, body?: unknown): Promise<T> {

@@ -7,6 +7,7 @@ import { THEME_SWATCH } from '@/lib/themes';
 import { relativeTime } from '@/lib/format';
 import { AdminBrand, Member, Panel, adminApi } from './adminApi';
 import { PhonePreview } from './PhonePreview';
+import { HmPanelRenewal } from './HmPanelRenewal';
 import { PlansEditor } from './PlansEditor';
 import { Button, Card, Empty, Field, PageHeader, StatusDot, Toggle, errMsg } from './ui';
 
@@ -193,6 +194,8 @@ function BrandEditor({
         accentColor: draft.accentColor,
         theme: draft.theme,
         themeChoices: draft.themeChoices ?? [],
+        renewalVia: draft.renewalVia ?? 'local',
+        renewalPanelId: draft.renewalPanelId ?? null,
         defaultLocale: draft.defaultLocale,
         supportUrl: draft.supportUrl ?? '',
         supportTelegram: draft.supportTelegram ?? '',
@@ -628,6 +631,7 @@ function RenewalTab({ draft, set }: { draft: AdminBrand; set: SetFn }) {
           </Field>
         </div>
       </Card>
+      <HmPanelRenewal draft={draft} set={set} />
       <PlansEditor plans={plans} onChange={(next) => set('plans', next)} />
     </div>
   );

@@ -1,10 +1,11 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
-import { RenewalRequest, RenewalStatus } from '@prisma/client';
+import { PanelConnection, RenewalRequest, RenewalStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../auth/auth.types';
-import { BrandsService, parsePlans } from '../brands/brands.service';
+import { BrandsService, hmError, parsePlans } from '../brands/brands.service';
+import { HM_ORDER_DONE, HM_ORDER_REFUSED } from '../integrations/hmpanel/hmpanel.client';
 import { brandScope } from '../common/access/scope';
 import { decryptSecret, encryptSecret } from '../common/crypto/secret.crypto';
 import { PanelGatewayService } from '../panels/panel-gateway.service';
@@ -20,7 +21,11 @@ const MAX_RECEIPT_BYTES = 3 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 @Injectable()
-export class RenewalsService {
+export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy {
+  private readonly logger = new Logger(RenewalsService.name);
+  private syncTimer?: ReturnType<typeof setInterval>;
+  private syncing = false;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
@@ -31,6 +36,16 @@ export class RenewalsService {
     private readonly audit: AuditService,
     private readonly telegram: TelegramService,
   ) {}
+
+  /** HMPanel store orders are decided over there; follow them every minute. */
+  onApplicationBootstrap() {
+    this.syncTimer = setInterval(() => void this.syncExternal().catch(() => undefined), 60_000);
+    this.syncTimer.unref?.();
+  }
+
+  onModuleDestroy() {
+    if (this.syncTimer) clearInterval(this.syncTimer);
+  }
 
   // ---------- public ----------
 
@@ -47,6 +62,8 @@ export class RenewalsService {
     if (!brand?.renewalEnabled) throw new BadRequestException('Renewal is not available here');
     const plan = parsePlans(brand.plansJson).find((p) => p.id === input.planId && p.price.trim());
     if (!plan) throw new BadRequestException('Choose one of the listed plans');
+    const viaHm = brand.renewalVia === 'hmpanel' && Boolean(brand.renewalPanelId);
+    if (viaHm && !plan.productId) throw new BadRequestException('This plan is not linked to a store product');
 
     const { mime, data } = parseDataUrl(input.receipt);
     const receiptHash = createHash('sha256').update(data).digest('hex');
@@ -59,6 +76,19 @@ export class RenewalsService {
 
     const found = await this.lookup.lookup(brand, input.url);
     const subId = found.subId ?? found.snapshot.subscriptionId;
+
+    // Through HMPanel: the account must live on that panel, so the store renews that exact client.
+    let hmPanel: PanelConnection | null = null;
+    let hmClientId: string | null = null;
+    if (viaHm) {
+      hmPanel = await this.prisma.panelConnection.findUnique({ where: { id: brand.renewalPanelId! } });
+      if (!hmPanel) throw new BadRequestException('Renewal is not available here');
+      hmClientId =
+        found.account?.panelId === hmPanel.id
+          ? found.account.clientRef
+          : ((await this.gateway.find(hmPanel, input.url, subId))?.clientRef ?? null);
+      if (!hmClientId) throw new BadRequestException('This subscription was not found in the store; contact support');
+    }
 
     const open = await this.prisma.renewalRequest.count({
       where: { brandId: brand.id, subId, status: RenewalStatus.PENDING },
@@ -75,8 +105,8 @@ export class RenewalsService {
         subId,
         subUrlEnc: encryptSecret(input.url, key),
         displayName: found.snapshot.displayName,
-        panelId: found.account?.panelId ?? null,
-        clientRef: found.account?.clientRef ?? null,
+        panelId: hmPanel?.id ?? found.account?.panelId ?? null,
+        clientRef: hmClientId ?? found.account?.clientRef ?? null,
         planId: plan.id,
         planTitle: plan.title,
         days: plan.days,
@@ -92,6 +122,39 @@ export class RenewalsService {
         deviceEndpoint: input.deviceEndpoint?.slice(0, 1024) || null,
       },
     });
+    if (hmPanel && hmClientId) {
+      try {
+        const order = await this.gateway.hmStore(hmPanel).createOrder({
+          productId: plan.productId!,
+          name: (input.payerName?.trim() || found.snapshot.displayName || subId).slice(0, 80),
+          paymentMethod: 'MANUAL_BANK',
+          receiptText: input.payerNote?.trim().slice(0, 300) || undefined,
+          receiptImage: input.receipt,
+          isRenewal: true,
+          renewClientId: hmClientId,
+          ...(plan.users > 0 ? { limitIp: plan.users } : {}),
+        });
+        const updated = await this.prisma.renewalRequest.update({
+          where: { id: row.id },
+          data: { externalOrderId: order.orderId ?? order.id ?? null, externalCode: order.trackingCode ?? null, externalSyncedAt: new Date() },
+          omit: { receiptData: true },
+        });
+        if (this.telegram.isConfigured(brand)) {
+          void this.telegram
+            .say(
+              brand,
+              `🧾 رسید تمدید <b>${escHtml(row.displayName || subId)}</b> · ${escHtml(plan.title)} — ${escHtml(plan.price)}\n` +
+                `در فروشگاه HMPanel ثبت شد (کد پیگیری <code>${escHtml(order.trackingCode ?? '-')}</code>). تأیید از ربات یا پنل HMPanel.`,
+            )
+            .catch(() => undefined);
+        }
+        return this.toPublic(updated);
+      } catch (err) {
+        await this.prisma.renewalRequest.delete({ where: { id: row.id } }).catch(() => undefined);
+        throw new BadRequestException(hmError(err));
+      }
+    }
+
     void this.review(row, found.snapshot)
       .then((review) => this.telegram.renewalReceived(brand, { ...row, review }, { mime, data }))
       .catch(() => undefined);
@@ -99,6 +162,8 @@ export class RenewalsService {
   }
 
   async statuses(ids: string[]) {
+    // Customers waiting on an HMPanel order see the decision as soon as it's made.
+    await this.syncExternal({ ids: ids.slice(0, 30), minAgeMs: 20_000 }).catch(() => undefined);
     const rows = await this.prisma.renewalRequest.findMany({
       where: { id: { in: ids.slice(0, 30) } },
       omit: { receiptData: true, subUrlEnc: true },
@@ -140,6 +205,8 @@ export class RenewalsService {
       status: r.status,
       adminNote: r.adminNote,
       canApply: Boolean(r.panelId && r.clientRef),
+      via: r.externalOrderId ? 'hmpanel' : 'local',
+      externalCode: r.externalCode,
       appliedOnPanel: r.appliedOnPanel,
       applyMessage: r.applyMessage,
       createdAt: r.createdAt.toISOString(),
@@ -252,13 +319,25 @@ export class RenewalsService {
 
   private async decideApprove(
     row: RenewalRow,
-    opts: { apply: boolean; note?: string; by: string; userId: string | null; telegramOrigin: boolean },
+    opts: { apply: boolean; note?: string; by: string; userId: string | null; telegramOrigin: boolean; externalDone?: boolean },
   ) {
     if (row.status !== RenewalStatus.PENDING) throw new BadRequestException('Already decided');
     const terms = normalizeTerms({ days: row.days, gb: row.gb, users: row.users, mode: row.mode as 'add' | 'reset' });
     let appliedOnPanel: boolean | null = null;
     let applyMessage: string | null = null;
-    if (opts.apply) {
+    if (row.externalOrderId) {
+      // The HMPanel store delivers the renewal (and charges that admin); just tell it.
+      if (!opts.externalDone) {
+        const store = await this.storeFor(row);
+        try {
+          await store.approve(row.externalOrderId);
+        } catch (err) {
+          throw new BadRequestException(hmError(err));
+        }
+      }
+      appliedOnPanel = true;
+      applyMessage = `HMPanel ${row.externalCode ?? ''}`.trim();
+    } else if (opts.apply) {
       const target = await this.resolveTarget(row);
       if (!target) {
         throw new BadRequestException('Account not found on any panel. Approve without applying and renew it manually.');
@@ -309,9 +388,17 @@ export class RenewalsService {
 
   private async decideReject(
     row: RenewalRow,
-    opts: { note?: string; by: string; userId: string | null; telegramOrigin: boolean },
+    opts: { note?: string; by: string; userId: string | null; telegramOrigin: boolean; externalDone?: boolean },
   ) {
     if (row.status !== RenewalStatus.PENDING) throw new BadRequestException('Already decided');
+    if (row.externalOrderId && !opts.externalDone) {
+      const store = await this.storeFor(row);
+      try {
+        await store.reject(row.externalOrderId, opts.note?.trim() || 'Payment not confirmed');
+      } catch (err) {
+        throw new BadRequestException(hmError(err));
+      }
+    }
     await this.prisma.renewalRequest.update({
       where: { id: row.id },
       data: {
@@ -344,6 +431,51 @@ export class RenewalsService {
     const brand = await this.prisma.brand.findUnique({ where: { id: row.brandId } }).catch(() => null);
     if (brand && this.telegram.isConfigured(brand)) {
       await this.telegram.renewalDecided(brand, row, decision).catch(() => undefined);
+    }
+  }
+
+  private async storeFor(row: { panelId: string | null }) {
+    const panel = row.panelId ? await this.prisma.panelConnection.findUnique({ where: { id: row.panelId } }) : null;
+    if (!panel || panel.type !== 'hmpanel') throw new BadRequestException('The HMPanel connection for this order is gone');
+    return this.gateway.hmStore(panel);
+  }
+
+  /**
+   * Pull decisions made in HMPanel (its bot or panel) for open store orders and
+   * finish them here: status, push to the customer, audit.
+   */
+  async syncExternal(filter: { ids?: string[]; minAgeMs?: number } = {}) {
+    if (this.syncing && !filter.ids) return;
+    if (!filter.ids) this.syncing = true;
+    try {
+      const rows = await this.prisma.renewalRequest.findMany({
+        where: {
+          status: RenewalStatus.PENDING,
+          externalOrderId: { not: null },
+          ...(filter.ids ? { id: { in: filter.ids } } : {}),
+          ...(filter.minAgeMs ? { OR: [{ externalSyncedAt: null }, { externalSyncedAt: { lt: new Date(Date.now() - filter.minAgeMs) } }] } : {}),
+        },
+        omit: { receiptData: true },
+        take: 50,
+      });
+      for (const row of rows) {
+        try {
+          const order = await (await this.storeFor(row)).order(row.externalOrderId!);
+          await this.prisma.renewalRequest.update({ where: { id: row.id }, data: { externalSyncedAt: new Date() } });
+          if (HM_ORDER_DONE.has(order.status)) {
+            await this.decideApprove(row, { apply: false, by: 'HMPanel', userId: null, telegramOrigin: true, externalDone: true });
+          } else if (HM_ORDER_REFUSED.has(order.status)) {
+            const reason = order.rejectReason ?? order.payment?.rejectReason ?? undefined;
+            await this.decideReject(row, { note: reason ?? undefined, by: 'HMPanel', userId: null, telegramOrigin: true, externalDone: true });
+          } else if (order.status === 'PROVISION_FAILED' && order.provisionError) {
+            await this.prisma.renewalRequest.update({ where: { id: row.id }, data: { applyMessage: order.provisionError.slice(0, 300) } });
+          }
+        } catch (err) {
+          this.logger.warn(`HMPanel order sync for ${row.id} failed: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+    } finally {
+      if (!filter.ids) this.syncing = false;
     }
   }
 
@@ -411,4 +543,8 @@ function parseDataUrl(raw: string): { mime: string; data: Buffer } {
   if (data.length > MAX_RECEIPT_BYTES) throw new BadRequestException('Receipt image is larger than 3 MB');
   if (data.length < 200) throw new BadRequestException('Receipt image is empty');
   return { mime, data };
+}
+
+function escHtml(s: string) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

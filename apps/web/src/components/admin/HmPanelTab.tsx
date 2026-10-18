@@ -109,6 +109,7 @@ export function HmPanelTab({
           ...(service ? { service } : {}),
           ...(p.category?.name ? { category: p.category.name.slice(0, 40) } : prev?.category ? { category: prev.category } : {}),
           ...(p.category?.id ? { categoryId: p.category.id } : {}),
+          ...(p.panel?.id ? { sourcePanelId: p.panel.id, sourcePanelName: p.panel.name } : {}),
         };
       });
     set('plans', [...fromStore, ...draft.plans.filter((p) => !p.productId)].slice(0, 12));

@@ -101,6 +101,7 @@ export function HmPanelRenewal({ draft, set }: { draft: AdminBrand; set: SetFn }
         ...(service ? { service } : {}),
         ...(p.category?.name ? { category: p.category.name.slice(0, 40) } : prev?.category ? { category: prev.category } : {}),
           ...(p.category?.id ? { categoryId: p.category.id } : {}),
+          ...(p.panel?.id ? { sourcePanelId: p.panel.id, sourcePanelName: p.panel.name } : {}),
       };
     });
     const manual = draft.plans.filter((p) => !p.productId);

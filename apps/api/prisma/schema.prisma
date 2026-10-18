@@ -177,6 +177,9 @@ model Brand {
   iconBg          String  @default("theme")
   /// Main buttons' color (empty = the primary color)
   buttonColor     String?
+  /// Where this brand reaches Telegram from a server that can't: a relay base URL and/or an HTTP proxy
+  telegramApiBase String?
+  telegramProxy   String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

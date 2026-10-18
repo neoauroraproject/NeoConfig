@@ -29,6 +29,9 @@ class PlanDto {
   @IsOptional() @IsString() @MaxLength(64) productId?: string;
   @IsOptional() @IsIn(['xui', 'pasarguard']) service?: string;
   @IsOptional() @IsString() @MaxLength(64) categoryId?: string;
+  @IsOptional() @IsString() @MaxLength(64) panelId?: string;
+  @IsOptional() @IsString() @MaxLength(64) sourcePanelId?: string;
+  @IsOptional() @IsString() @MaxLength(60) sourcePanelName?: string;
   @IsOptional() @IsString() @MaxLength(40) category?: string;
 }
 
@@ -51,6 +54,8 @@ class BrandDto {
   @IsOptional() @IsObject() reminders?: Record<string, unknown>;
   @IsOptional() @IsString() @MaxLength(16) iconBg?: string;
   @IsOptional() @IsString() @MaxLength(9) buttonColor?: string | null;
+  @IsOptional() @IsString() @MaxLength(200) telegramApiBase?: string | null;
+  @IsOptional() @IsString() @MaxLength(200) telegramProxy?: string | null;
   @IsOptional() @IsString() defaultLocale?: string;
   @IsOptional() @IsString() supportUrl?: string | null;
   @IsOptional() @IsString() supportTelegram?: string | null;
@@ -137,6 +142,11 @@ export class BrandsController {
   @Post(':id/domains/:domainId/ssl')
   issueSsl(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('domainId') domainId: string) {
     return this.brands.issueSsl(user, id, domainId);
+  }
+
+  @Get(':id/panels')
+  brandPanels(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.brands.brandPanels(user, id);
   }
 
   @Get(':id/hmpanel')

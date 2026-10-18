@@ -804,6 +804,13 @@ function DomainsTab({
 
 function RenewalTab({ draft, set, openHm }: { draft: AdminBrand; set: SetFn; openHm: () => void }) {
   const plans = draft.plans;
+  const [panels, setPanels] = useState<Array<{ id: string; name: string; type: string }>>([]);
+  useEffect(() => {
+    adminApi
+      .brandPanels(draft.id)
+      .then(setPanels)
+      .catch(() => setPanels([]));
+  }, [draft.id]);
   const usable = plans.filter((p) => p.title.trim() && p.price.trim());
   const missing = [
     !draft.renewalEnabled && 'روشن کردن تمدید',
@@ -888,7 +895,7 @@ function RenewalTab({ draft, set, openHm }: { draft: AdminBrand; set: SetFn; ope
         </span>
         <span className="text-[var(--brand)]">تب HMPanel ←</span>
       </button>
-      <PlansEditor plans={plans} onChange={(next) => set('plans', next)} />
+      <PlansEditor plans={plans} onChange={(next) => set('plans', next)} panels={panels} />
     </div>
   );
 }
@@ -984,9 +991,20 @@ function AccessTab({ draft, set, onDeleted }: { draft: AdminBrand; set: SetFn; o
 }
 
 /** Bot token is write-only, so this card saves on its own instead of with the main form. */
+/** A Cloudflare Worker that forwards Bot API calls to Telegram (for servers where it is filtered). */
+const WORKER_SNIPPET = `export default {
+  async fetch(request) {
+    const url = new URL(request.url);
+    url.hostname = 'api.telegram.org';
+    return fetch(new Request(url, request));
+  },
+};`;
+
 function TelegramCard({ brand, onSaved }: { brand: AdminBrand; onSaved: (b: AdminBrand) => void }) {
   const [token, setToken] = useState('');
   const [chatId, setChatId] = useState(brand.telegramChatId ?? '');
+  const [proxy, setProxy] = useState(brand.telegramProxy ?? '');
+  const [relay, setRelay] = useState(brand.telegramApiBase ?? '');
   const [busy, setBusy] = useState<'save' | 'test' | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -996,6 +1014,8 @@ function TelegramCard({ brand, onSaved }: { brand: AdminBrand; onSaved: (b: Admi
     try {
       const b = await adminApi.updateBrand(brand.id, {
         telegramChatId: chatId.trim(),
+        telegramProxy: proxy.trim(),
+        telegramApiBase: relay.trim(),
         ...(token.trim() ? { telegramBotToken: token.trim() } : {}),
       } as Partial<AdminBrand>);
       setToken('');
@@ -1058,6 +1078,26 @@ function TelegramCard({ brand, onSaved }: { brand: AdminBrand; onSaved: (b: Admi
           <input id="tg-chat" dir="ltr" className="field" value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="123456789" />
         </Field>
       </div>
+      <details className="group mt-4 rounded-xl border border-[var(--line)] open:bg-[var(--surface-2)]" open={Boolean(proxy || relay) || undefined}>
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm">
+          <span className="flex-1">سرور به تلگرام دسترسی ندارد؟ (فیلتر)</span>
+          <span className="text-xs text-[var(--ink-3)]">{proxy ? 'پروکسی' : relay ? 'رله' : 'مستقیم'}</span>
+          <ChevronDown className="h-4 w-4 text-[var(--ink-3)] transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="space-y-3 px-3 pb-3 text-xs leading-6 text-[var(--ink-2)]">
+          <p>اگر پیام آزمایشی با «سرور به تلگرام دسترسی ندارد» برگشت، یکی از این دو را بگذار (فقط مدیر سازمان می‌تواند تغییر دهد):</p>
+          <Field label="پروکسی HTTP روی سرور" htmlFor="tg-proxy" hint="مثلاً کلاینت xray/v2ray روی همین سرور: http://127.0.0.1:10809">
+            <input id="tg-proxy" dir="ltr" className="field" value={proxy} onChange={(e) => setProxy(e.target.value)} placeholder="http://127.0.0.1:10809" />
+          </Field>
+          <Field label="یا آدرس رله (Cloudflare Worker)" htmlFor="tg-relay" hint="یک Worker رایگان بساز، کد زیر را در آن بگذار و آدرسش را اینجا بنویس">
+            <input id="tg-relay" dir="ltr" className="field" value={relay} onChange={(e) => setRelay(e.target.value)} placeholder="https://tg-relay.yourname.workers.dev" />
+          </Field>
+          <pre dir="ltr" className="overflow-x-auto rounded-lg bg-[var(--surface)] p-3 text-[11px] leading-5">{WORKER_SNIPPET}</pre>
+          <button type="button" className="text-[var(--brand)]" onClick={() => navigator.clipboard?.writeText(WORKER_SNIPPET)}>
+            کپی کد Worker
+          </button>
+        </div>
+      </details>
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Button onClick={save} busy={busy === 'save'} disabled={busy !== null}>
           ذخیرهٔ تلگرام

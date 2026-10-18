@@ -65,7 +65,16 @@ function problems(p: RenewalPlan) {
   return out;
 }
 
-export function PlansEditor({ plans, onChange }: { plans: RenewalPlan[]; onChange: (plans: RenewalPlan[]) => void }) {
+export function PlansEditor({
+  plans,
+  onChange,
+  panels = [],
+}: {
+  plans: RenewalPlan[];
+  onChange: (plans: RenewalPlan[]) => void;
+  /** The brand's panels; a plan can be limited to one of them. */
+  panels?: Array<{ id: string; name: string; type: string }>;
+}) {
   const newId = () => `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 
   /** Keep auto titles in sync with the numbers until the admin types their own. */
@@ -260,6 +269,33 @@ export function PlansEditor({ plans, onChange }: { plans: RenewalPlan[]; onChang
                   </div>
                   <p className="mt-1.5 text-[11px] leading-5 text-[var(--ink-3)]">کاربر فقط پلن‌های نوع سرویس خودش را می‌بیند.</p>
                 </div>
+
+                {/* panel */}
+                {(panels.length > 1 || p.panelId) && (
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs text-[var(--ink-2)]">برای کدام پنل</span>
+                    <select
+                      className="field !bg-[var(--surface)]"
+                      value={p.panelId ?? ''}
+                      onChange={(e) => {
+                        const panel = panels.find((x) => x.id === e.target.value);
+                        update(i, {
+                          panelId: e.target.value || undefined,
+                          // A panel's type decides the service kind too.
+                          ...(panel ? { service: panel.type === 'pasarguard' ? 'pasarguard' : panel.type === 'xui' ? 'xui' : p.service } : {}),
+                        });
+                      }}
+                    >
+                      <option value="">همهٔ پنل‌ها</option>
+                      {panels.map((x) => (
+                        <option key={x.id} value={x.id}>
+                          {x.name} ({x.type === 'pasarguard' ? 'پاسارگارد' : x.type === 'hmpanel' ? 'HMPanel' : 'ثنایی'})
+                        </option>
+                      ))}
+                    </select>
+                    {p.sourcePanelName && <span className="mt-1 block text-[11px] text-[var(--ink-3)]">از محصول HMPanel روی پنل «{p.sourcePanelName}»</span>}
+                  </label>
+                )}
 
                 {/* category */}
                 <label className="block">

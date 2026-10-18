@@ -49,6 +49,10 @@ export type LookupResponse = {
   serviceKind?: 'xui' | 'pasarguard' | null;
   /** HMPanel store category this service is locked to (null = any plan). */
   storeCategoryId?: string | null;
+  /** Panel connection the subscription was found on. */
+  panelId?: string | null;
+  /** HMPanel: its inner panel. */
+  sourcePanelRef?: string | null;
 };
 
 export type RenewalPlan = {
@@ -66,6 +70,11 @@ export type RenewalPlan = {
   service?: 'xui' | 'pasarguard';
   /** HMPanel store category; a store-sold service renews only within its category. */
   categoryId?: string;
+  /** Only for subscriptions on this panel connection. */
+  panelId?: string;
+  /** HMPanel: the store product's inner panel (only its clients see the plan). */
+  sourcePanelId?: string;
+  sourcePanelName?: string;
   category?: string;
 };
 

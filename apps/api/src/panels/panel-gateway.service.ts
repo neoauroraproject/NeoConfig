@@ -33,6 +33,9 @@ export interface FoundAccount {
   /** Devices registered under an HWID limit (exact). */
   devicesRegistered?: number | null;
   deviceMode?: 'hwid' | 'ip' | null;
+  /** HMPanel: the panel inside HMPanel that hosts this client (matches store products' panel). */
+  sourcePanelRef?: string | null;
+  sourcePanelName?: string | null;
   /** HMPanel client email (its config name), used to find the store category it is locked to. */
   clientEmail?: string | null;
   /** Which kind of service this is, so renewal plans can be matched to it. */
@@ -95,6 +98,8 @@ export class PanelGatewayService {
           devicesOnline: null,
           serviceKind: hmServiceKind(c),
           clientEmail: c.email,
+          sourcePanelRef: c.panel?.id ?? null,
+          sourcePanelName: c.panel?.name ?? null,
         };
       }
       if (row.type === 'pasarguard') {

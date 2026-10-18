@@ -23,6 +23,8 @@ export type SavedAccount = {
   deviceMode?: 'hwid' | 'ip' | null;
   serviceKind?: 'xui' | 'pasarguard' | null;
   storeCategoryId?: string | null;
+  panelId?: string | null;
+  sourcePanelRef?: string | null;
   stale?: boolean;
 };
 
@@ -94,6 +96,8 @@ export function upsertAccount(
     deviceMode: res.deviceMode ?? null,
     serviceKind: res.serviceKind ?? null,
     storeCategoryId: res.storeCategoryId ?? null,
+    panelId: res.panelId ?? null,
+    sourcePanelRef: res.sourcePanelRef ?? null,
     stale: false,
   };
   const accounts = existing

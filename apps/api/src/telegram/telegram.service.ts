@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ProxyAgent } from 'undici';
 import { decryptSecret } from '../common/crypto/secret.crypto';
 import { HELP_TEXT, Markup, RenewalNotice, decisionLine, esc, receiptCaption, reviewKeyboard } from './review';
 
@@ -8,6 +9,10 @@ export interface TelegramTarget {
   telegramBotTokenEnc: string | null;
   /** Admins' numeric Telegram IDs, comma separated (a group ID still works). */
   telegramChatId: string | null;
+  /** Relay for servers that can't reach api.telegram.org (e.g. a Cloudflare Worker). */
+  telegramApiBase?: string | null;
+  /** HTTP proxy to reach Telegram through, e.g. a local xray client: http://127.0.0.1:10809 */
+  telegramProxy?: string | null;
 }
 
 /** A receipt message as sent to one admin, so every copy can be closed later. */
@@ -199,24 +204,55 @@ export class TelegramService {
   ): Promise<{ ok: boolean; error: string; result?: unknown }> {
     if (!t.telegramBotTokenEnc) return { ok: false, error: 'Telegram bot token is required' };
     const token = decryptSecret(t.telegramBotTokenEnc, this.config.getOrThrow<string>('ENCRYPTION_KEY'));
-    const base = (this.config.get<string>('TELEGRAM_API_BASE') || 'https://api.telegram.org').replace(/\/+$/, '');
+    const base = (t.telegramApiBase || this.config.get<string>('TELEGRAM_API_BASE') || 'https://api.telegram.org').replace(/\/+$/, '');
+    const proxy = t.telegramProxy || this.config.get<string>('TELEGRAM_PROXY') || '';
     try {
       const isForm = body instanceof FormData;
-      const res = await fetch(`${base}/bot${token}/${method}`, {
+      const init: RequestInit & { dispatcher?: unknown } = {
         method: 'POST',
         headers: isForm ? undefined : { 'Content-Type': 'application/json' },
         body: isForm ? body : JSON.stringify(body),
         signal: AbortSignal.timeout(15_000),
-      });
+      };
+      if (proxy) init.dispatcher = this.agent(proxy);
+      const res = await fetch(`${base}/bot${token}/${method}`, init);
       const json = (await res.json().catch(() => null)) as { ok?: boolean; description?: string; result?: unknown } | null;
       if (!json?.ok) throw new Error(json?.description || `Telegram HTTP ${res.status}`);
       return { ok: true, error: '', result: json.result };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = networkReason(err);
       this.logger.warn(`Telegram ${method} failed: ${msg}`);
       return { ok: false, error: msg };
     }
   }
+
+  private agents = new Map<string, ProxyAgent>();
+
+  private agent(url: string) {
+    let a = this.agents.get(url);
+    if (!a) {
+      a = new ProxyAgent(url);
+      this.agents.set(url, a);
+    }
+    return a;
+  }
+}
+
+/**
+ * "fetch failed" hides the real cause in err.cause; turn the usual ones into
+ * something an admin can act on (most often: Telegram is filtered on this server).
+ */
+export function networkReason(err: unknown): string {
+  const e = err as { message?: string; name?: string; cause?: { code?: string; message?: string } };
+  const code = e?.cause?.code || '';
+  const text = `${e?.message || ''} ${e?.cause?.message || ''}`;
+  if (e?.name === 'TimeoutError' || /timeout|aborted/i.test(text) || code === 'UND_ERR_CONNECT_TIMEOUT' || code === 'ETIMEDOUT') {
+    return 'سرور به تلگرام دسترسی ندارد (اتصال تمام نشد) — آدرس رله یا پروکسی را در تنظیمات ربات بگذارید';
+  }
+  if (['ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH'].includes(code) || /fetch failed/i.test(text)) {
+    return `سرور به تلگرام دسترسی ندارد${code ? ` (${code})` : ''} — آدرس رله یا پروکسی را در تنظیمات ربات بگذارید`;
+  }
+  return e?.message || String(err);
 }
 
 /** Telegram's most common refusals, in words an admin can act on. */

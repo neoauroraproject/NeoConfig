@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { encryptSecret } from '../common/crypto/secret.crypto';
-import { TelegramService } from './telegram.service';
+import { TelegramService, networkReason } from './telegram.service';
 
 const KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 const config = { get: (k: string) => (k === 'APP_URL' ? 'https://neo.example.com' : undefined), getOrThrow: () => KEY };
@@ -80,5 +80,19 @@ describe('TelegramService', () => {
     expect(await svc.renewalReceived({ ...target, telegramChatId: null }, renewal)).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
     await expect(svc.test({ ...target, telegramChatId: null })).rejects.toThrow();
+  });
+
+  it('goes through the brand relay and explains a blocked network', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, result: { message_id: 3 } })));
+    vi.stubGlobal('fetch', fetchMock);
+    const svc = new TelegramService(config as never);
+    await expect(svc.test(target)).rejects.toThrow(/دسترسی ندارد/);
+    const sent = await svc.renewalReceived({ ...target, telegramApiBase: 'https://tg.example.workers.dev' }, renewal);
+    expect(sent).toHaveLength(1);
+    expect(String(fetchMock.mock.calls[1][0])).toMatch(/^https:\/\/tg\.example\.workers\.dev\/bot/);
+    expect(networkReason(new Error('Bad Request: chat not found'))).toBe('Bad Request: chat not found');
   });
 });

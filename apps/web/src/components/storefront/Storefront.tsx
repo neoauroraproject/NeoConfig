@@ -502,6 +502,8 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
               subUrl={active.url}
               serviceKind={active.serviceKind}
               storeCategoryId={active.storeCategoryId}
+              panelId={active.panelId}
+              sourcePanelRef={active.sourcePanelRef}
               push={push}
               onEnablePush={togglePush}
               onSubmitted={(r) => trackNew(r, active.id)}

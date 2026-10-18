@@ -22,9 +22,14 @@ export function RenewSheet({
   onEnablePush,
   serviceKind,
   storeCategoryId,
+  panelId,
+  sourcePanelRef,
   mode = 'renew',
 }: {
   storeCategoryId?: string | null;
+  /** The subscription's panel, so only that panel's plans are offered. */
+  panelId?: string | null;
+  sourcePanelRef?: string | null;
   open: boolean;
   onClose: () => void;
   /** renew: extend this subscription. purchase: buy a new one (HMPanel store plans only). */
@@ -52,13 +57,20 @@ export function RenewSheet({
     purchase
       ? Boolean(p.productId)
       : (!p.service || !serviceKind || p.service === serviceKind) &&
+        // Plans tied to a panel only show for subscriptions on that panel.
+        (!p.panelId || !panelId || p.panelId === panelId) &&
+        (!p.sourcePanelId || !sourcePanelRef || p.sourcePanelId === sourcePanelRef) &&
         // A store-sold service renews only inside its own store category.
         (!storeCategoryId || !p.categoryId || p.categoryId === storeCategoryId),
   );
   // Tabs: the plan's category, or its service type when it has none.
-  const groupOf = (p: RenewalPlan) => p.category || (p.service === 'xui' ? 'V2Ray / Xray' : p.service === 'pasarguard' ? 'PasarGuard' : null);
+  const groupOf = (p: RenewalPlan) =>
+    p.category || p.sourcePanelName || (p.service === 'xui' ? 'V2Ray / Xray' : p.service === 'pasarguard' ? 'PasarGuard' : null);
+
   const categories = [...new Set(plans.map(groupOf).filter((c): c is string => Boolean(c)))];
   const shown = category ? plans.filter((p) => groupOf(p) === category) : plans;
+  // Buying new: categories first (each with its panel/service), then that category's plans.
+  const pickCategory = purchase && categories.length > 1 && category === null;
 
   useEffect(() => {
     if (open) {
@@ -110,6 +122,8 @@ export function RenewSheet({
               ? t('err_tooManyPending')
               : /different store category/i.test(msg)
                 ? t('err_category')
+                : /different panel/i.test(msg)
+                  ? t('err_panel')
               : msg || t('err_generic'),
       );
     } finally {
@@ -129,8 +143,40 @@ export function RenewSheet({
     <Sheet open={open} onClose={onClose} title={purchase ? t('purchaseTitle') : t('renewTitle')} closeLabel={t('close')}>
       {step === 'plan' && (
         <div>
-          <p className="mb-3 text-sm text-ink-2">{t('choosePlan')}</p>
-          {categories.length > 1 && (
+          <p className="mb-3 text-sm text-ink-2">{pickCategory ? t('chooseCategory') : t('choosePlan')}</p>
+          {pickCategory && (
+            <div className="grid grid-cols-2 gap-2">
+              {categories.map((c) => {
+                const inCat = plans.filter((p) => groupOf(p) === c);
+                const first = inCat[0];
+                const kind = first?.service === 'xui' ? 'V2Ray / Xray' : first?.service === 'pasarguard' ? 'PasarGuard' : first?.sourcePanelName;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => {
+                      setCategory(c);
+                      if (first) setPlanId(first.id);
+                    }}
+                    className="flex min-h-[6.5rem] flex-col items-start justify-between rounded-3xl bg-surface-2 p-4 text-start"
+                  >
+                    <span className="text-[15px] font-semibold text-ink">{c}</span>
+                    {kind && kind !== c && <span className="text-[11px] text-ink-3">{kind}</span>}
+                    <span className="mt-2 text-xs text-ink-2">
+                      {inCat.length} {t('plansCount')}
+                      {first?.price ? ` · ${t('fromPrice')} ${first.price}` : ''}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {!pickCategory && purchase && categories.length > 1 && (
+            <button type="button" onClick={() => setCategory(null)} className="mb-3 text-xs font-medium text-brand">
+              ← {t('allCategories')}
+            </button>
+          )}
+          {!pickCategory && !purchase && categories.length > 1 && (
             <div className="scrollbar-none -mx-1 mb-3 flex gap-1.5 overflow-x-auto px-1" role="tablist" aria-label={t('choosePlan')}>
               {[null, ...categories].map((c) => (
                 <button
@@ -151,7 +197,7 @@ export function RenewSheet({
             </div>
           )}
           {plans.length === 0 && <p className="rounded-3xl bg-surface-2 p-4 text-sm leading-7 text-ink-2">{t('noPlansForService')}</p>}
-          <div role="radiogroup" aria-label={t('choosePlan')} className="space-y-2">
+          <div role="radiogroup" aria-label={t('choosePlan')} className={`space-y-2 ${pickCategory ? 'hidden' : ''}`}>
             {shown.map((p) => {
               const selected = p.id === planId;
               return (
@@ -178,7 +224,7 @@ export function RenewSheet({
           </div>
           <button
             type="button"
-            disabled={!plan}
+            disabled={!plan || pickCategory}
             onClick={() => setStep('pay')}
             className="mt-5 h-14 w-full rounded-3xl bg-btn text-sm font-semibold text-btn-ink disabled:opacity-40"
           >

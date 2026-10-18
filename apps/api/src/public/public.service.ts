@@ -70,7 +70,15 @@ export class PublicService {
         ? await this.brands.serviceCategory(brand.renewalPanelId, account.clientRef, account.clientEmail).catch(() => null)
         : null;
     const { account: _account, ...publicPart } = result;
-    return { ...publicPart, history, storeCategoryId, renewable: Boolean(account?.renewable && brand.renewalEnabled) };
+    return {
+      ...publicPart,
+      history,
+      storeCategoryId,
+      // Which panel the subscription lives on, so the app offers that panel's plans.
+      panelId: account?.panelId ?? null,
+      sourcePanelRef: account?.sourcePanelRef ?? null,
+      renewable: Boolean(account?.renewable && brand.renewalEnabled),
+    };
   }
 
   /** Keep today's latest reading; called from lookups and from the reminder pass. */

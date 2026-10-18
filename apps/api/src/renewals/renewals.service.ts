@@ -83,6 +83,12 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
     if (plan.service && found.serviceKind && plan.service !== found.serviceKind) {
       throw new BadRequestException('This plan is for a different kind of service');
     }
+    if (
+      (plan.panelId && found.account && plan.panelId !== found.account.panelId) ||
+      (plan.sourcePanelId && found.account?.sourcePanelRef && plan.sourcePanelId !== found.account.sourcePanelRef)
+    ) {
+      throw new BadRequestException('This plan is for a different panel than your service');
+    }
     // HMPanel locks a store-sold service to its product category; offer only matching plans.
     if (plan.categoryId && brand.renewalPanelId && found.account?.panelId === brand.renewalPanelId) {
       const locked = await this.brands

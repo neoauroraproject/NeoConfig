@@ -38,6 +38,8 @@ export type AdminBrand = {
   expiryRemindersEnabled: boolean;
   telegramChatId: string | null;
   telegramConfigured: boolean;
+  telegramApiBase?: string | null;
+  telegramProxy?: string | null;
   cardNumber: string | null;
   cardHolder: string | null;
   bankName: string | null;
@@ -227,6 +229,7 @@ export const adminApi = {
     }),
   uploadLogo: (id: string, dataUrl: string, variant: 'light' | 'dark' = 'light') =>
     request<AdminBrand>(`/api/v1/admin/brands/${id}/logo?variant=${variant}`, { method: 'POST', token: tk(), body: json({ dataUrl }) }),
+  brandPanels: (id: string) => request<Array<{ id: string; name: string; type: string }>>(`/api/v1/admin/brands/${id}/panels`, { token: tk() }),
   pendingRenewals: () => request<{ count: number; latestAt: string | null }>('/api/v1/admin/renewals/pending', { token: tk() }),
   hmpanelPanels: (id: string) =>
     request<Array<{ id: string; name: string; host: string; healthy: boolean | null; inBrand: boolean }>>(`/api/v1/admin/brands/${id}/hmpanel`, {

@@ -34,6 +34,11 @@ export interface RenewalPlan {
   productId?: string;
   /** HMPanel store category of that product (a service renews only within its category). */
   categoryId?: string;
+  /** Only for subscriptions on this NeoConfig panel connection. */
+  panelId?: string;
+  /** HMPanel: the inner panel of the store product; only its clients see the plan. */
+  sourcePanelId?: string;
+  sourcePanelName?: string;
   /** Only for this kind of service (3x-ui / PasarGuard); missing = any. */
   service?: 'xui' | 'pasarguard';
   /** Group shown as a tab in the renewal sheet. */
@@ -71,6 +76,8 @@ export type BrandInput = Partial<Record<(typeof EDITABLE)[number], string | bool
   themeChoices?: string[];
   copy?: Record<string, string>;
   reminders?: unknown;
+  telegramApiBase?: string | null;
+  telegramProxy?: string | null;
   /** Write-only. Empty string clears it. */
   telegramBotToken?: string;
 };
@@ -238,6 +245,11 @@ export class BrandsService {
     }
 
     if (input.plans) data.plansJson = JSON.stringify(cleanPlans(input.plans));
+    // Where the server connects to is an org-level decision; resellers can't point it elsewhere.
+    if (isOrgAdmin(user)) {
+      if (input.telegramApiBase !== undefined) data.telegramApiBase = cleanRoute(input.telegramApiBase, 'relay');
+      if (input.telegramProxy !== undefined) data.telegramProxy = cleanRoute(input.telegramProxy, 'proxy');
+    }
     if (input.reminders) data.reminderJson = compactReminderSettings(input.reminders, brand.defaultLocale);
     if (input.copy) data.copyJson = JSON.stringify(parseCopy(JSON.stringify(input.copy)));
     if (input.themeChoices) data.themeChoices = themeList('mist', input.themeChoices).filter((t) => input.themeChoices!.includes(t));
@@ -469,6 +481,19 @@ export class BrandsService {
   }
 
   // ---------- HMPanel store ----------
+
+  /** The panels a brand's plans can be limited to (names and types only; resellers may see these). */
+  async brandPanels(user: AuthUser, id: string) {
+    const brand = await this.mustOwn(user, id);
+    const own = await this.prisma.brand.findUnique({ where: { id }, select: { panels: { select: { id: true } } } });
+    const ids = own?.panels.map((p) => p.id) ?? [];
+    const rows = await this.prisma.panelConnection.findMany({
+      where: { orgId: brand.orgId, ...(ids.length ? { id: { in: ids } } : {}) },
+      select: { id: true, name: true, type: true },
+      orderBy: { name: 'asc' },
+    });
+    return rows;
+  }
 
   /** HMPanel connections this brand may use (its own panels, or the org's when none are picked). */
   async hmpanelPanels(user: AuthUser, id: string) {
@@ -704,6 +729,8 @@ export class BrandsService {
       telegramChatId: r.telegramChatId,
       telegramConfigured: Boolean(r.telegramBotTokenEnc && r.telegramChatId),
       telegramHasToken: Boolean(r.telegramBotTokenEnc),
+      telegramApiBase: r.telegramApiBase,
+      telegramProxy: r.telegramProxy,
       panelIds: r.panels.map((p) => p.id),
       owner: r.owner ?? null,
       domains: r.domains.map((d) => ({
@@ -745,6 +772,9 @@ function cleanPlans(plans: PlanInput[]): RenewalPlan[] {
       ...(typeof p.productId === 'string' && p.productId.trim() ? { productId: p.productId.trim().slice(0, 64) } : {}),
       ...(p.service === 'xui' || p.service === 'pasarguard' ? { service: p.service } : {}),
       ...(typeof p.categoryId === 'string' && p.categoryId.trim() ? { categoryId: p.categoryId.trim().slice(0, 64) } : {}),
+      ...(typeof p.panelId === 'string' && p.panelId.trim() ? { panelId: p.panelId.trim().slice(0, 64) } : {}),
+      ...(typeof p.sourcePanelId === 'string' && p.sourcePanelId.trim() ? { sourcePanelId: p.sourcePanelId.trim().slice(0, 64) } : {}),
+      ...(typeof p.sourcePanelName === 'string' && p.sourcePanelName.trim() ? { sourcePanelName: p.sourcePanelName.trim().slice(0, 60) } : {}),
       ...(typeof p.category === 'string' && p.category.trim() ? { category: p.category.trim().slice(0, 40) } : {}),
     }));
 }
@@ -802,4 +832,19 @@ export function parseCopy(json: string | null | undefined): Record<string, strin
   } catch {
     return {};
   }
+}
+
+/** A Telegram relay (https URL) or HTTP proxy (http[s]://host:port); empty clears it. */
+function cleanRoute(v: string | null | undefined, kind: 'relay' | 'proxy'): string | null {
+  const raw = (v || '').trim();
+  if (!raw) return null;
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    throw new BadRequestException(kind === 'relay' ? 'Relay must be a full https:// address' : 'Proxy must look like http://127.0.0.1:10809');
+  }
+  if (kind === 'relay' && u.protocol !== 'https:') throw new BadRequestException('Relay must use https://');
+  if (kind === 'proxy' && !['http:', 'https:'].includes(u.protocol)) throw new BadRequestException('Only HTTP proxies are supported (http://host:port)');
+  return raw.replace(/\/+$/, '').slice(0, 200);
 }

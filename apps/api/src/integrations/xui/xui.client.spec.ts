@@ -121,3 +121,32 @@ describe('remarkFromBody', () => {
     expect(remarkFromBody('<html>nope</html>')).toBeNull();
   });
 });
+
+describe('3x-ui 3.7+ HWID device limit', () => {
+  it('reports registered devices and renews the HWID limit', async () => {
+    const GB = 1024 ** 3;
+    const row = { email: 'sara', subId: 'hw1', totalGB: 0, expiryTime: 0, enable: true, limitIp: 0, limitHwid: 2, traffic: { up: 0, down: GB } };
+    const calls: Array<{ url: string; body?: unknown }> = [];
+    const json = (obj: unknown) => new Response(JSON.stringify({ success: true, obj }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        if (url.endsWith('/inbounds/list')) return json([]);
+        if (url.endsWith('/clients/list')) return json([row]);
+        if (url.includes('/clients/hwids/')) return json([{ id: 1, deviceOs: 'android' }]);
+        if (url.includes('/clients/get/')) return json(row);
+        return json([]);
+      }),
+    );
+    const svc = new XuiClientService();
+    const cfg = { baseUrl: 'https://p.example.com', apiToken: 't' };
+    const found = await svc.findBySubId(cfg, 'hw1');
+    expect(found).toMatchObject({ deviceMode: 'hwid', deviceLimit: 2, devicesRegistered: 1 });
+    await svc.renewBySubId(cfg, 'hw1', { days: 30, gb: 0, users: 3, mode: 'add' });
+    const update = calls.find((c) => c.url.includes('/clients/update/sara'));
+    expect(update?.body).toMatchObject({ limitHwid: 3, limitIp: 0 });
+    vi.unstubAllGlobals();
+  });
+});

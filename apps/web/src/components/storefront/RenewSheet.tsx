@@ -20,10 +20,12 @@ export function RenewSheet({
   onSubmitted,
   push,
   onEnablePush,
+  serviceKind,
 }: {
   open: boolean;
   onClose: () => void;
   subUrl: string;
+  serviceKind?: 'xui' | 'pasarguard' | null;
   onSubmitted: (r: PublicRenewal) => void;
   push: PushState;
   onEnablePush: () => void;
@@ -37,18 +39,25 @@ export function RenewSheet({
   const [payerNote, setPayerNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [category, setCategory] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Plans for this kind of service only (a 3x-ui plan cannot renew a PasarGuard user).
+  const plans = (renewal?.plans ?? []).filter((p) => !p.service || !serviceKind || p.service === serviceKind);
+  const categories = [...new Set(plans.map((p) => p.category).filter((c): c is string => Boolean(c)))];
+  const shown = category ? plans.filter((p) => p.category === category) : plans;
 
   useEffect(() => {
     if (open) {
       setStep('plan');
       setReceipt(null);
       setError(null);
-      setPlanId(renewal?.plans[0]?.id ?? null);
+      setCategory(null);
+      setPlanId(plans[0]?.id ?? null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, renewal]);
 
-  const plan = renewal?.plans.find((p) => p.id === planId) ?? null;
+  const plan = plans.find((p) => p.id === planId) ?? null;
 
   async function pickFile(file: File | undefined) {
     if (!file) return;
@@ -105,8 +114,29 @@ export function RenewSheet({
       {step === 'plan' && (
         <div>
           <p className="mb-3 text-sm text-ink-2">{t('choosePlan')}</p>
+          {categories.length > 1 && (
+            <div className="scrollbar-none -mx-1 mb-3 flex gap-1.5 overflow-x-auto px-1" role="tablist" aria-label={t('choosePlan')}>
+              {[null, ...categories].map((c) => (
+                <button
+                  key={c ?? 'all'}
+                  type="button"
+                  role="tab"
+                  aria-selected={category === c}
+                  onClick={() => {
+                    setCategory(c);
+                    const first = (c ? plans.filter((p) => p.category === c) : plans)[0];
+                    if (first) setPlanId(first.id);
+                  }}
+                  className={`h-9 shrink-0 rounded-full px-4 text-sm ${category === c ? 'bg-ink text-on-ink' : 'bg-surface-2 text-ink-2'}`}
+                >
+                  {c ?? t('allPlans')}
+                </button>
+              ))}
+            </div>
+          )}
+          {plans.length === 0 && <p className="rounded-3xl bg-surface-2 p-4 text-sm leading-7 text-ink-2">{t('noPlansForService')}</p>}
           <div role="radiogroup" aria-label={t('choosePlan')} className="space-y-2">
-            {renewal.plans.map((p) => {
+            {shown.map((p) => {
               const selected = p.id === planId;
               return (
                 <button

@@ -111,6 +111,9 @@ export type HmProduct = {
   trafficBytes: number;
   durationDays: number;
   ipLimitOptions?: number[];
+  providerId?: string | null;
+  category?: { id: string; name: string } | null;
+  panel?: { id: string; name: string } | null;
 };
 
 export type Member = {

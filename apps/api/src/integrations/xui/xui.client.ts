@@ -282,7 +282,18 @@ export class XuiClientService {
       if (traffic?.lastOnline && matches[0].stat) matches[0].stat.lastOnline = Number(traffic.lastOnline);
     }
     const result = aggregateMatches(subId, matches, online);
+    // 3x-ui 3.7+ can pin a client to N devices by HWID; that list is exact, so prefer it.
+    const hwidLimit = Math.max(0, ...matches.map((m) => Number(m.client.limitHwid) || 0));
+    if (hwidLimit > 0) {
+      result.deviceLimit = hwidLimit;
+      result.deviceMode = 'hwid';
+      const counts = await Promise.all(matches.map((m) => this.hwidCount(cfg, m.client.email)));
+      const known = counts.filter((n): n is number => n !== null);
+      result.devicesRegistered = known.length ? Math.max(...known) : null;
+      return result;
+    }
     result.deviceLimit = Math.max(0, ...matches.map((m) => Number(m.client.limitIp) || 0));
+    result.deviceMode = 'ip';
     // Devices connected now: the panel's recent-IP log, only while the account is online.
     if (result.online) {
       const counts = await Promise.all(matches.map((m) => this.recentIpCount(cfg, m.client.email, source.kind)));
@@ -292,6 +303,16 @@ export class XuiClientService {
       result.devicesOnline = 0;
     }
     return result;
+  }
+
+  /** Devices registered under a client's HWID limit (3x-ui 3.7+). */
+  private async hwidCount(cfg: XuiConnectionConfig, email: string): Promise<number | null> {
+    const session = await this.authenticate(cfg);
+    const res = await this.request<unknown>(cfg, 'POST', `/panel/api/clients/hwids/${encodeURIComponent(email)}`, { session }).catch(
+      () => null,
+    );
+    if (!res?.success) return null;
+    return Array.isArray(res.obj) ? res.obj.length : res.obj == null ? 0 : null;
   }
 
   /** IPs the panel logged for a client (3x-ui's IP-limit log). null when unavailable. */
@@ -326,7 +347,12 @@ export class XuiClientService {
         expiryTime: nextExpiryMs(current < 0 ? 0 : current, plan.days, now),
         totalGB: nextQuotaBytes(Number(client.totalGB) || 0, plan),
       };
-      if (plan.users > 0) changes.limitIp = plan.users;
+      if (plan.users > 0) {
+        // HWID limit (3.7+) when the client uses it or the panel has it; else the classic IP limit.
+        const usesHwid = Number(client.limitHwid) > 0 || (source.kind === 'v3' && 'limitHwid' in client && !(Number(client.limitIp) > 0));
+        if (usesHwid) changes.limitHwid = plan.users;
+        else changes.limitIp = plan.users;
+      }
 
       const res =
         source.kind === 'v3'
@@ -591,6 +617,9 @@ export interface XuiAccountMatch {
   renewable: boolean;
   deviceLimit?: number | null;
   devicesOnline?: number | null;
+  /** hwid: limit counts registered devices (exact); ip: limit counts concurrent IPs. */
+  deviceMode?: 'hwid' | 'ip';
+  devicesRegistered?: number | null;
 }
 
 /** 3x-ui returns the IP log as an array, a JSON string of one, or "No IP Record". */

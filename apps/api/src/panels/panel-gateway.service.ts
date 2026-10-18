@@ -30,6 +30,11 @@ export interface FoundAccount {
   deviceLimit?: number | null;
   /** Devices connected right now, when the panel can tell. */
   devicesOnline?: number | null;
+  /** Devices registered under an HWID limit (exact). */
+  devicesRegistered?: number | null;
+  deviceMode?: 'hwid' | 'ip' | null;
+  /** Which kind of service this is, so renewal plans can be matched to it. */
+  serviceKind?: 'xui' | 'pasarguard' | null;
 }
 
 /** One entry point for every panel flavour, so callers never branch on type. */
@@ -86,6 +91,7 @@ export class PanelGatewayService {
           renewable: true,
           deviceLimit: typeof c.limitIp === 'number' ? c.limitIp : null,
           devicesOnline: null,
+          serviceKind: hmServiceKind(c),
         };
       }
       if (row.type === 'pasarguard') {
@@ -102,6 +108,8 @@ export class PanelGatewayService {
           renewable: true,
           deviceLimit: m.deviceLimit ?? null,
           devicesOnline: null,
+          deviceMode: m.deviceLimit ? 'hwid' : null,
+          serviceKind: 'pasarguard',
         };
       }
       if (!subId) return null;
@@ -118,6 +126,9 @@ export class PanelGatewayService {
         renewable: m.renewable,
         deviceLimit: m.deviceLimit ?? null,
         devicesOnline: m.devicesOnline ?? null,
+        devicesRegistered: m.devicesRegistered ?? null,
+        deviceMode: m.deviceMode ?? null,
+        serviceKind: 'xui',
       };
     } catch (err) {
       this.logger.warn(`Lookup on panel ${row.name} failed: ${err instanceof Error ? err.message : err}`);
@@ -155,4 +166,11 @@ export class PanelGatewayService {
       return { ok: false, message: err instanceof Error ? err.message : 'Renewal failed' };
     }
   }
+}
+
+/** HMPanel serves 3x-ui clients and external PasarGuard/Eylan users; plans differ per kind. */
+function hmServiceKind(c: { panel?: { type?: string | null } | null }): 'xui' | 'pasarguard' | null {
+  const t = (c.panel?.type || '').toLowerCase();
+  if (!t) return null;
+  return t.includes('pasarguard') || t.includes('marzban') ? 'pasarguard' : t.includes('ui') ? 'xui' : null;
 }

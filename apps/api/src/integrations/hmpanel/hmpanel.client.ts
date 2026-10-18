@@ -27,6 +27,7 @@ export interface HmPanelClient {
   remainingBytes: number | null;
   expiryTime: number;
   limitIp?: number | null;
+  panel?: { id: string; name: string; type: string } | null;
   lastSyncedAt: string | null;
 }
 
@@ -53,6 +54,8 @@ export interface HmPanelProduct {
   isTest: boolean;
   ipLimitOptions?: number[];
   category?: { id: string; name: string } | null;
+  providerId?: string | null;
+  panel?: { id: string; name: string } | null;
 }
 
 export interface HmPanelOrder {

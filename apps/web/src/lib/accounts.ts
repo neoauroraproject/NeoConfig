@@ -19,6 +19,9 @@ export type SavedAccount = {
   history: Array<{ d: string; used: number }>;
   deviceLimit?: number | null;
   devicesOnline?: number | null;
+  devicesRegistered?: number | null;
+  deviceMode?: 'hwid' | 'ip' | null;
+  serviceKind?: 'xui' | 'pasarguard' | null;
   stale?: boolean;
 };
 
@@ -86,6 +89,9 @@ export function upsertAccount(
     history: recordUsage(mergeHistory(existing?.history ?? [], res.history ?? []), res.snapshot.totalUsedBytes),
     deviceLimit: res.deviceLimit ?? null,
     devicesOnline: res.devicesOnline ?? null,
+    devicesRegistered: res.devicesRegistered ?? null,
+    deviceMode: res.deviceMode ?? null,
+    serviceKind: res.serviceKind ?? null,
     stale: false,
   };
   const accounts = existing

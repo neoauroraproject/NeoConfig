@@ -43,6 +43,10 @@ export type LookupResponse = {
   deviceLimit?: number | null;
   /** Devices connected right now. */
   devicesOnline?: number | null;
+  /** Devices registered under an HWID limit (exact, 3x-ui 3.7+). */
+  devicesRegistered?: number | null;
+  deviceMode?: 'hwid' | 'ip' | null;
+  serviceKind?: 'xui' | 'pasarguard' | null;
 };
 
 export type RenewalPlan = {
@@ -56,6 +60,9 @@ export type RenewalPlan = {
   mode: 'add' | 'reset';
   /** HMPanel store product (renewals through HMPanel). */
   productId?: string;
+  /** Only for 3x-ui or PasarGuard services; missing = any. */
+  service?: 'xui' | 'pasarguard';
+  category?: string;
 };
 
 export const THEME_IDS = ['mist', 'graphite', 'sage', 'moss', 'pearl'] as const;

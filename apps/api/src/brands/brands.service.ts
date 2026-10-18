@@ -30,10 +30,14 @@ export interface RenewalPlan {
   mode: 'add' | 'reset';
   /** HMPanel store product this plan orders when the brand renews through HMPanel. */
   productId?: string;
+  /** Only for this kind of service (3x-ui / PasarGuard); missing = any. */
+  service?: 'xui' | 'pasarguard';
+  /** Group shown as a tab in the renewal sheet. */
+  category?: string;
 }
 
 /** Plans as they arrive from the admin form (new fields may be missing). */
-export type PlanInput = Omit<RenewalPlan, 'users' | 'mode'> & { users?: number; mode?: string };
+export type PlanInput = Omit<RenewalPlan, 'users' | 'mode' | 'service'> & { users?: number; mode?: string; service?: string };
 
 export const THEMES = ['mist', 'graphite', 'sage', 'moss', 'pearl'] as const;
 
@@ -564,6 +568,8 @@ function cleanPlans(plans: PlanInput[]): RenewalPlan[] {
       users: Math.max(0, Math.min(20, Math.round(Number(p.users) || 0))),
       mode: p.mode === 'reset' ? 'reset' : 'add',
       ...(typeof p.productId === 'string' && p.productId.trim() ? { productId: p.productId.trim().slice(0, 64) } : {}),
+      ...(p.service === 'xui' || p.service === 'pasarguard' ? { service: p.service } : {}),
+      ...(typeof p.category === 'string' && p.category.trim() ? { category: p.category.trim().slice(0, 40) } : {}),
     }));
 }
 

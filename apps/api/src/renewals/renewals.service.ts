@@ -76,6 +76,9 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
 
     const found = await this.lookup.lookup(brand, input.url);
     const subId = found.subId ?? found.snapshot.subscriptionId;
+    if (plan.service && found.serviceKind && plan.service !== found.serviceKind) {
+      throw new BadRequestException('This plan is for a different kind of service');
+    }
 
     // Through HMPanel: the account must live on that panel, so the store renews that exact client.
     let hmPanel: PanelConnection | null = null;

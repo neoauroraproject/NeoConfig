@@ -20,6 +20,9 @@ export function HmPanelRenewal({ draft, set }: { draft: AdminBrand; set: SetFn }
   const [panels, setPanels] = useState<Array<{ id: string; name: string; host: string }> | null>(null);
   const [cards, setCards] = useState<HmCard[] | null>(null);
   const [busy, setBusy] = useState<'cards' | 'products' | null>(null);
+  const [products, setProducts] = useState<HmProduct[] | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [kindFilter, setKindFilter] = useState<'all' | 'xui' | 'pasarguard'>('all');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const panelId = draft.renewalPanelId ?? '';
 
@@ -59,38 +62,50 @@ export function HmPanelRenewal({ draft, set }: { draft: AdminBrand; set: SetFn }
     }
   }
 
-  async function importProducts() {
+  async function loadProducts() {
     if (!panelId) return;
     setBusy('products');
     setMsg(null);
     try {
-      const products = await adminApi.hmpanelProducts(draft.id, panelId);
-      if (!products.length) {
+      const list = await adminApi.hmpanelProducts(draft.id, panelId);
+      if (!list.length) {
         setMsg({ ok: false, text: 'محصول قابل تمدیدی در فروشگاه HMPanel نیست.' });
         return;
       }
-      const linked = new Map(draft.plans.filter((p) => p.productId).map((p) => [p.productId, p]));
-      const fromStore: RenewalPlan[] = products.slice(0, 12).map((p: HmProduct) => {
-        const prev = linked.get(p.id);
-        return {
-          id: prev?.id ?? `p${p.id.slice(-10)}`,
-          title: prev?.title ?? p.name.slice(0, 60),
-          days: p.durationDays,
-          gb: p.trafficBytes > 0 ? +(p.trafficBytes / GB).toFixed(2) : 0,
-          price: p.priceToman ? `${fa(p.priceToman)} تومان` : prev?.price ?? '',
-          users: p.ipLimitOptions?.[0] ?? prev?.users ?? 0,
-          mode: 'reset',
-          productId: p.id,
-        };
-      });
-      const manual = draft.plans.filter((p) => !p.productId);
-      set('plans', [...fromStore, ...manual].slice(0, 12));
-      setMsg({ ok: true, text: `${fa(fromStore.length)} پلن از فروشگاه HMPanel وارد شد. «ذخیره تغییرات» را بزن.` });
+      setProducts(list);
+      const linked = new Set(draft.plans.map((p) => p.productId).filter(Boolean));
+      setPicked(new Set(linked.size ? list.filter((p) => linked.has(p.id)).map((p) => p.id) : list.slice(0, 12).map((p) => p.id)));
     } catch (e) {
       setMsg({ ok: false, text: errMsg(e) });
     } finally {
       setBusy(null);
     }
+  }
+
+  function importPicked() {
+    if (!products) return;
+    const linked = new Map(draft.plans.filter((p) => p.productId).map((p) => [p.productId, p]));
+    const chosen = products.filter((p) => picked.has(p.id));
+    const fromStore: RenewalPlan[] = chosen.slice(0, 12).map((p) => {
+      const prev = linked.get(p.id);
+      const service = productService(p);
+      return {
+        id: prev?.id ?? `p${p.id.slice(-10)}`,
+        title: prev?.title ?? p.name.slice(0, 60),
+        days: p.durationDays,
+        gb: p.trafficBytes > 0 ? +(p.trafficBytes / GB).toFixed(2) : 0,
+        price: p.priceToman ? `${fa(p.priceToman)} تومان` : prev?.price ?? '',
+        users: p.ipLimitOptions?.[0] ?? prev?.users ?? 0,
+        mode: 'reset',
+        productId: p.id,
+        ...(service ? { service } : {}),
+        ...(p.category?.name ? { category: p.category.name.slice(0, 40) } : prev?.category ? { category: prev.category } : {}),
+      };
+    });
+    const manual = draft.plans.filter((p) => !p.productId);
+    set('plans', [...fromStore, ...manual].slice(0, 12));
+    setProducts(null);
+    setMsg({ ok: true, text: `${fa(fromStore.length)} پلن از فروشگاه HMPanel وارد شد. «ذخیره تغییرات» را بزن.` });
   }
 
   const unlinked = draft.renewalVia === 'hmpanel' ? draft.plans.filter((p) => !p.productId).length : 0;
@@ -152,10 +167,22 @@ export function HmPanelRenewal({ draft, set }: { draft: AdminBrand; set: SetFn }
             <Button variant="secondary" onClick={loadCards} disabled={busy !== null}>
               {busy === 'cards' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />} کارت‌ها از HMPanel
             </Button>
-            <Button variant="secondary" onClick={importProducts} disabled={busy !== null}>
+            <Button variant="secondary" onClick={loadProducts} disabled={busy !== null}>
               {busy === 'products' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} پلن‌ها از محصولات HMPanel
             </Button>
           </div>
+
+          {products && (
+            <ProductPicker
+              products={products}
+              picked={picked}
+              setPicked={setPicked}
+              kind={kindFilter}
+              setKind={setKindFilter}
+              onImport={importPicked}
+              onCancel={() => setProducts(null)}
+            />
+          )}
 
           {cards && cards.length > 0 && (
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -197,5 +224,100 @@ export function HmPanelRenewal({ draft, set }: { draft: AdminBrand; set: SetFn }
         </>
       )}
     </Card>
+  );
+}
+
+function productService(p: HmProduct): 'xui' | 'pasarguard' | undefined {
+  const id = (p.providerId || '').toLowerCase();
+  if (id.includes('pasarguard') || id.includes('marzban')) return 'pasarguard';
+  if (id.includes('xui') || id.includes('3x')) return 'xui';
+  return undefined;
+}
+
+const KIND_LABEL = { xui: 'ثنایی', pasarguard: 'پاسارگارد' } as const;
+
+/** Choose which store products become plans, grouped by category and filterable by panel type. */
+function ProductPicker({
+  products,
+  picked,
+  setPicked,
+  kind,
+  setKind,
+  onImport,
+  onCancel,
+}: {
+  products: HmProduct[];
+  picked: Set<string>;
+  setPicked: (s: Set<string>) => void;
+  kind: 'all' | 'xui' | 'pasarguard';
+  setKind: (k: 'all' | 'xui' | 'pasarguard') => void;
+  onImport: () => void;
+  onCancel: () => void;
+}) {
+  const visible = products.filter((p) => kind === 'all' || productService(p) === kind);
+  const groups = new Map<string, HmProduct[]>();
+  for (const p of visible) {
+    const key = p.category?.name || 'بدون دسته';
+    groups.set(key, [...(groups.get(key) ?? []), p]);
+  }
+  const toggle = (id: string) => {
+    const next = new Set(picked);
+    if (next.has(id)) next.delete(id);
+    else if (next.size < 12) next.add(id);
+    setPicked(next);
+  };
+  return (
+    <div className="mt-4 rounded-2xl border border-[var(--line)] p-3">
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        {(['all', 'xui', 'pasarguard'] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setKind(k)}
+            aria-pressed={kind === k}
+            className={`h-8 rounded-full px-3 text-xs ${kind === k ? 'bg-[var(--ink)] text-white' : 'border border-[var(--line)] text-[var(--ink-2)]'}`}
+          >
+            {k === 'all' ? 'همه' : KIND_LABEL[k]}
+          </button>
+        ))}
+        <span className="ms-auto text-xs text-[var(--ink-3)]">{fa(picked.size)} انتخاب‌شده (حداکثر ۱۲)</span>
+      </div>
+      <div className="max-h-80 space-y-3 overflow-y-auto">
+        {[...groups.entries()].map(([cat, items]) => (
+          <div key={cat}>
+            <p className="mb-1.5 text-xs font-medium text-[var(--ink-2)]">{cat}</p>
+            <div className="space-y-1">
+              {items.map((p) => {
+                const svc = productService(p);
+                return (
+                  <label key={p.id} className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 hover:bg-[var(--surface-2)]">
+                    <input type="checkbox" checked={picked.has(p.id)} onChange={() => toggle(p.id)} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm">{p.name}</span>
+                      <span className="block text-[11px] text-[var(--ink-3)]">
+                        {p.durationDays ? `${fa(p.durationDays)} روز` : ''}
+                        {p.trafficBytes ? ` · ${fa(+(p.trafficBytes / GB).toFixed(1))} گیگ` : ' · نامحدود'}
+                        {p.panel?.name ? ` · ${p.panel.name}` : ''}
+                      </span>
+                    </span>
+                    {svc && <span className="rounded-full bg-[var(--surface-2)] px-2 py-0.5 text-[11px] text-[var(--ink-2)]">{KIND_LABEL[svc]}</span>}
+                    <span className="text-xs">{p.priceToman ? `${fa(p.priceToman)} ت` : '—'}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        {visible.length === 0 && <p className="py-4 text-center text-sm text-[var(--ink-3)]">محصولی با این فیلتر نیست.</p>}
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <Button variant="ghost" onClick={onCancel}>
+          انصراف
+        </Button>
+        <Button onClick={onImport} disabled={picked.size === 0}>
+          وارد کردن {fa(picked.size)} پلن
+        </Button>
+      </div>
+    </div>
   );
 }

@@ -189,7 +189,19 @@ export function Dashboard(p: Props) {
             <span className="num text-sm text-ink">{p.account.deviceLimit > 0 ? p.account.deviceLimit : '∞'}</span>
           </div>
         )}
-        {p.account.devicesOnline != null && (
+        {p.account.deviceMode === 'hwid' && p.account.devicesRegistered != null && (
+          <div className="flex items-center gap-3 border-b border-line px-3 py-3">
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-surface-2 text-ink-2">
+              <MonitorSmartphone className="h-4 w-4" />
+            </span>
+            <span className="flex-1 text-sm text-ink-2">{t('devicesRegistered')}</span>
+            <span className="num text-sm text-ink">
+              {p.account.devicesRegistered}
+              {p.account.deviceLimit ? <span className="text-ink-3"> / {p.account.deviceLimit}</span> : null}
+            </span>
+          </div>
+        )}
+        {p.account.deviceMode !== 'hwid' && p.account.devicesOnline != null && (
           <div className="flex items-center gap-3 border-b border-line px-3 py-3">
             <span className="grid h-10 w-10 place-items-center rounded-full bg-surface-2 text-ink-2">
               <MonitorSmartphone className="h-4 w-4" />

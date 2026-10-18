@@ -86,6 +86,7 @@ export function PlansEditor({ plans, onChange }: { plans: RenewalPlan[]; onChang
     onChange(next);
   };
   const full = plans.length >= MAX_PLANS;
+  const categories = [...new Set(plans.map((p) => p.category).filter((c): c is string => Boolean(c)))];
 
   return (
     <Card>
@@ -97,6 +98,11 @@ export function PlansEditor({ plans, onChange }: { plans: RenewalPlan[]; onChang
           <Plus className="h-4 w-4" /> پلن خالی
         </Button>
       </div>
+      <datalist id="plan-categories">
+        {categories.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
       <p className="mb-2 text-xs text-[var(--ink-3)]">شروع سریع — یکی را بزن، بعد فقط قیمت بگذار:</p>
       <div className="mb-4 flex flex-wrap gap-2">
         {TEMPLATES.map((t) => (
@@ -226,7 +232,7 @@ export function PlansEditor({ plans, onChange }: { plans: RenewalPlan[]; onChang
 
                 {/* users */}
                 <div>
-                  <p className="mb-1.5 text-xs text-[var(--ink-2)]">کاربر مجاز (اتصال هم‌زمان)</p>
+                  <p className="mb-1.5 text-xs text-[var(--ink-2)]">کاربر مجاز (تعداد دستگاه / HWID)</p>
                   <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="کاربر مجاز">
                     {USER_CHOICES.map((u) => (
                       <Chip key={u.v} on={(p.users ?? 0) === u.v} onClick={() => update(i, { users: u.v })} role="radio">
@@ -235,6 +241,38 @@ export function PlansEditor({ plans, onChange }: { plans: RenewalPlan[]; onChang
                     ))}
                   </div>
                 </div>
+
+                {/* service kind */}
+                <div>
+                  <p className="mb-1.5 text-xs text-[var(--ink-2)]">برای کدام سرویس</p>
+                  <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="نوع سرویس">
+                    {(
+                      [
+                        [undefined, 'همه'],
+                        ['xui', 'ثنایی (3x-ui)'],
+                        ['pasarguard', 'پاسارگارد'],
+                      ] as const
+                    ).map(([v, label]) => (
+                      <Chip key={label} on={p.service === v} onClick={() => update(i, { service: v })} role="radio">
+                        {label}
+                      </Chip>
+                    ))}
+                  </div>
+                  <p className="mt-1.5 text-[11px] leading-5 text-[var(--ink-3)]">کاربر فقط پلن‌های نوع سرویس خودش را می‌بیند.</p>
+                </div>
+
+                {/* category */}
+                <label className="block">
+                  <span className="mb-1.5 block text-xs text-[var(--ink-2)]">دسته‌بندی (اختیاری)</span>
+                  <input
+                    className="field !bg-[var(--surface)]"
+                    list="plan-categories"
+                    maxLength={40}
+                    value={p.category ?? ''}
+                    placeholder="مثلاً: آلمان، اقتصادی، ویژه"
+                    onChange={(e) => update(i, { category: e.target.value || undefined })}
+                  />
+                </label>
               </div>
 
               {/* price + preview */}

@@ -120,6 +120,9 @@ const fa = {
   devicesNow: 'دستگاه متصل الان',
   usersUnit: 'کاربر',
   connections: 'اتصال‌ها',
+  devicesRegistered: 'دستگاه‌های ثبت‌شده',
+  allPlans: 'همه',
+  noPlansForService: 'برای این نوع سرویس پلنی تعریف نشده؛ با پشتیبانی در تماس باش.',
   err_receiptUsed: 'این رسید قبلاً برای یک تمدید استفاده شده است.',
   err_tooManyPending: 'چند درخواست تمدید در انتظار بررسی داری؛ کمی صبر کن.',
 } as const;
@@ -246,6 +249,9 @@ const en: Record<DictKey, string> = {
   devicesNow: 'Devices online now',
   usersUnit: 'users',
   connections: 'Connections',
+  devicesRegistered: 'Registered devices',
+  allPlans: 'All',
+  noPlansForService: 'No plans for this kind of service yet; contact support.',
   err_receiptUsed: 'This receipt was already used for a renewal.',
   err_tooManyPending: 'You already have requests waiting for review.',
 };

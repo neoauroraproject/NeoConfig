@@ -1,14 +1,14 @@
 'use client';
 
 import { AnimatePresence, motion } from 'framer-motion';
-import { Bell, MoreVertical, PlusSquare, Share } from 'lucide-react';
+import { Bell, ExternalLink, MoreVertical, PlusSquare, Share } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { PushState } from '@/lib/push';
 import { BrandMark } from './BrandMark';
 import { useSf } from './context';
 
 type Step = 'welcome' | 'install' | 'notify';
-type Platform = 'ios-safari' | 'ios-other' | 'android' | 'other';
+type Platform = 'ios-safari' | 'ios-other' | 'android' | 'android-inapp' | 'other';
 
 const COPY = {
   fa: {
@@ -23,7 +23,10 @@ const COPY = {
       action: 'نصب اپلیکیشن',
       got: 'نصبش کردم',
       ios: ['در نوار پایین ⁨Safari⁩ دکمهٔ «اشتراک‌گذاری» را بزن', '«⁨Add to Home Screen⁩» را انتخاب کن', 'بالای صفحه «⁨Add⁩» را بزن'],
-      iosOther: 'در آیفون فقط Safari می‌تواند اپ را نصب کند. این صفحه را در Safari باز کن.',
+      iosOther: 'در آیفون فقط Safari می‌تواند اپ را نصب کند و اعلان بفرستد. با دکمهٔ زیر همین صفحه در Safari باز می‌شود.',
+      inApp: 'این صفحه داخل یک برنامهٔ دیگر باز شده و نصب نمی‌شود. با دکمهٔ زیر در Chrome باز کن.',
+      openSafari: 'باز کردن در Safari',
+      openChrome: 'باز کردن در Chrome',
       android: ['منوی ⋮ مرورگر را باز کن', '«⁨Install app⁩» یا «⁨Add to Home screen⁩» را بزن'],
     },
     notify: {
@@ -48,7 +51,10 @@ const COPY = {
       action: 'Install app',
       got: 'I installed it',
       ios: ['Tap Share in Safari’s bottom bar', 'Choose “Add to Home Screen”', 'Tap “Add” at the top'],
-      iosOther: 'On iPhone only Safari can install apps. Open this page in Safari.',
+      iosOther: 'On iPhone only Safari can install apps and send notifications. The button below opens this page in Safari.',
+      inApp: 'This page is open inside another app and cannot be installed. Open it in Chrome below.',
+      openSafari: 'Open in Safari',
+      openChrome: 'Open in Chrome',
       android: ['Open the browser ⋮ menu', 'Tap “Install app” or “Add to Home screen”'],
     },
     notify: {
@@ -63,12 +69,27 @@ const COPY = {
   },
 } as const;
 
+const IN_APP = /FBAN|FBAV|Instagram|Line\/|Twitter|Telegram|WhatsApp|Snapchat|; wv\)/i;
+
 function platform(): Platform {
   if (typeof navigator === 'undefined') return 'other';
   const ua = navigator.userAgent;
-  if (/iphone|ipad|ipod/i.test(ua)) return /crios|fxios|edgios|opios/i.test(ua) ? 'ios-other' : 'ios-safari';
-  if (/android/i.test(ua)) return 'android';
+  if (/iphone|ipad|ipod/i.test(ua)) {
+    // Chrome/Firefox/Edge on iPhone and in-app browsers cannot install or get notifications.
+    return /crios|fxios|edgios|opios/i.test(ua) || IN_APP.test(ua) ? 'ios-other' : 'ios-safari';
+  }
+  if (/android/i.test(ua)) return IN_APP.test(ua) ? 'android-inapp' : 'android';
   return 'other';
+}
+
+/** A link that reopens this exact page in the system browser that can install it. */
+export function systemBrowserUrl(pf: Platform, href: string): string | null {
+  if (pf === 'ios-other') return `x-safari-${href}`;
+  if (pf === 'android-inapp') {
+    const u = new URL(href);
+    return `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=${u.protocol.replace(':', '')};package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(href)};end`;
+  }
+  return null;
 }
 
 /** Full-screen first-run guide: welcome, install to home screen, notifications. Skippable at any step. */
@@ -104,6 +125,22 @@ export function Intro({
   const step = steps[i];
   const last = i === steps.length - 1;
   const next = () => (last ? onDone() : setI(i + 1));
+
+  // Opened in Chrome on iPhone or inside Telegram/Instagram: hop to Safari / Chrome once, automatically.
+  const reopen = useMemo(() => (typeof location === 'undefined' ? null : systemBrowserUrl(pf, location.href)), [pf]);
+  useEffect(() => {
+    if (!reopen) return;
+    try {
+      if (sessionStorage.getItem('nc.reopen.tried')) return;
+      sessionStorage.setItem('nc.reopen.tried', '1');
+    } catch {
+      /* ignore */
+    }
+    const id = setTimeout(() => {
+      window.location.href = reopen;
+    }, 900);
+    return () => clearTimeout(id);
+  }, [reopen]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onDone();
@@ -206,7 +243,19 @@ export function Intro({
             </h1>
             <p className="mt-3 max-w-[34ch] text-sm leading-7 text-white/65">{title.body}</p>
 
-            {step === 'install' && !canPrompt && <InstallSteps pf={pf} c={c.install} />}
+            {step === 'install' && !canPrompt && !reopen && <InstallSteps pf={pf} c={c.install} />}
+            {reopen && (step === 'install' || step === 'welcome') && (
+              <div className="mt-5">
+                <Note>{pf === 'ios-other' ? c.install.iosOther : c.install.inApp}</Note>
+                <a
+                  href={reopen}
+                  className="mt-3 flex h-12 items-center justify-center gap-2 rounded-2xl bg-white text-sm font-medium text-[#111]"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  {pf === 'ios-other' ? c.install.openSafari : c.install.openChrome}
+                </a>
+              </div>
+            )}
             {step === 'notify' && pushNow === 'ios-needs-install' && <Note>{c.notify.iosLater}</Note>}
             {step === 'notify' && pushNow === 'denied' && <Note>{c.notify.blocked}</Note>}
           </motion.div>
@@ -261,7 +310,6 @@ function readableInk(cssVar: string) {
 }
 
 function InstallSteps({ pf, c }: { pf: Platform; c: (typeof COPY)['fa']['install'] | (typeof COPY)['en']['install'] }) {
-  if (pf === 'ios-other') return <Note>{c.iosOther}</Note>;
   const items = pf === 'ios-safari' ? c.ios : c.android;
   const icons = pf === 'ios-safari' ? [Share, PlusSquare, PlusSquare] : [MoreVertical, PlusSquare];
   return (

@@ -19,6 +19,9 @@ export interface LookupResult {
   renewable: boolean;
   deviceLimit: number | null;
   devicesOnline: number | null;
+  devicesRegistered: number | null;
+  deviceMode: 'hwid' | 'ip' | null;
+  serviceKind: 'xui' | 'pasarguard' | null;
   /** Present only when the account was matched on a configured panel. */
   account: FoundAccount | null;
 }
@@ -120,6 +123,9 @@ export class PublicService {
           renewable: found.renewable,
           deviceLimit: found.deviceLimit ?? null,
           devicesOnline: found.devicesOnline ?? null,
+          devicesRegistered: found.devicesRegistered ?? null,
+          deviceMode: found.deviceMode ?? null,
+          serviceKind: found.serviceKind ?? null,
           account: found,
         };
       }
@@ -142,6 +148,9 @@ export class PublicService {
       renewable: false,
       deviceLimit: null,
       devicesOnline: null,
+      devicesRegistered: null,
+      deviceMode: null,
+      serviceKind: null,
       account: null,
     };
   }

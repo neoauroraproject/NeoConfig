@@ -447,6 +447,7 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
               open={sheet === 'renew'}
               onClose={() => setSheet(null)}
               subUrl={active.url}
+              serviceKind={active.serviceKind}
               push={push}
               onEnablePush={togglePush}
               onSubmitted={(r) => {

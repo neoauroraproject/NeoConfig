@@ -177,6 +177,11 @@ export class PanelsService {
     });
     if (!row) throw new NotFoundException('Panel not found');
     await this.prisma.panelConnection.delete({ where: { id } });
+    // Brands that sold through this HMPanel go back to NeoConfig review.
+    await this.prisma.brand.updateMany({
+      where: { renewalPanelId: id },
+      data: { renewalPanelId: null, renewalVia: 'local', cardFromPanel: false, plansSync: false, purchaseEnabled: false },
+    });
     await this.audit.log({
       orgId: user.orgId,
       userId: user.id,

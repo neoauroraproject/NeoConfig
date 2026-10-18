@@ -59,7 +59,8 @@ export function brandMetadata(brand: Branding, tenant: string): Metadata {
 
 /** Changes whenever the logo or colors change, so browsers drop a cached favicon. */
 export function iconVersion(brand: Branding) {
-  const logo = brand.logoUrl ? /[?&]v=([^&]+)/.exec(brand.logoUrl)?.[1] ?? brand.logoUrl.length : 'r';
+  const v = (u?: string | null) => (u ? /[?&]v=([^&]+)/.exec(u)?.[1] ?? String(u.length) : '');
+  const logo = v(brand.logoUrl) + v(brand.logoDarkUrl) || 'r';
   return `&v=${encodeURIComponent(`${logo}-${brand.primaryColor.slice(1)}-${brand.theme}`)}`;
 }
 

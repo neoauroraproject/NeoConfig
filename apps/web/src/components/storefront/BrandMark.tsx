@@ -1,20 +1,26 @@
 /* eslint-disable @next/next/no-img-element */
 import type { Branding } from '@/lib/api';
+import { DARK_THEMES } from '@/lib/themes';
 
 /** Brand logo, or a nested-ring monogram drawn in the brand color. */
 export function BrandMark({
   brand,
   size = 40,
   className = '',
+  onDark,
 }: {
-  brand: Pick<Branding, 'logoUrl' | 'appName' | 'shortName'>;
+  brand: Pick<Branding, 'logoUrl' | 'appName' | 'shortName'> & Partial<Pick<Branding, 'logoDarkUrl' | 'theme'>>;
   size?: number;
   className?: string;
+  /** Force the logo for a dark (true) or light (false) background; default follows the theme. */
+  onDark?: boolean;
 }) {
-  if (brand.logoUrl) {
+  const dark = onDark ?? Boolean(brand.theme && DARK_THEMES.has(brand.theme));
+  const src = dark ? brand.logoDarkUrl || brand.logoUrl : brand.logoUrl || brand.logoDarkUrl;
+  if (src) {
     return (
       <img
-        src={brand.logoUrl}
+        src={src}
         alt={brand.appName}
         width={size}
         height={size}

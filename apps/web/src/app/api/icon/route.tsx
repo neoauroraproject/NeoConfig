@@ -1,6 +1,7 @@
 import { ImageResponse } from 'next/og';
 import { NextRequest } from 'next/server';
 import { INTERNAL, THEME_CANVAS, fetchBrand } from '@/lib/brand-server';
+import { DARK_THEMES } from '@/lib/themes';
 
 /** The uploaded logo as a data URL (satori needs the bytes, and the API is internal). */
 async function loadLogo(url: string): Promise<string | null> {
@@ -26,7 +27,9 @@ export async function GET(req: NextRequest) {
   const k = maskable ? 0.62 : 0.78;
   const headers = { 'Cache-Control': 'public, max-age=3600' };
 
-  const logo = brand.logoUrl ? await loadLogo(brand.logoUrl) : null;
+  const dark = DARK_THEMES.has(brand.theme);
+  const logoUrl = dark ? brand.logoDarkUrl || brand.logoUrl : brand.logoUrl || brand.logoDarkUrl;
+  const logo = logoUrl ? await loadLogo(logoUrl) : null;
   if (logo) {
     // Small favicons get almost the whole square; maskable icons keep the safe zone.
     const fill = maskable ? 0.6 : size <= 64 ? 0.94 : 0.8;

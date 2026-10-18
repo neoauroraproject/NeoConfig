@@ -22,6 +22,8 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
   const [canPaste, setCanPaste] = useState(false);
   const Arrow = locale === 'fa' ? ArrowUpLeft : ArrowUpRight;
   const graphite = brand.theme === 'graphite';
+  // The brand's own wording applies in its default language.
+  const own = locale === (brand.defaultLocale === 'en' ? 'en' : 'fa') ? brand.copy ?? {} : {};
 
   useEffect(() => {
     setCanPaste(typeof navigator !== 'undefined' && Boolean(navigator.clipboard?.readText));
@@ -83,9 +85,9 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
             {kickerB}
           </p>
           <h1 className="mt-5 whitespace-pre-line text-[2.6rem] font-normal leading-[1.15] tracking-tight text-ink">
-            {t('onboardTitle')}
+            {own.onboardTitle || t('onboardTitle')}
           </h1>
-          <p className="mt-4 max-w-[30ch] text-sm leading-7 text-ink-2">{t('onboardBody')}</p>
+          <p className="mt-4 max-w-[30ch] text-sm leading-7 text-ink-2">{own.onboardBody || t('onboardBody')}</p>
         </motion.div>
 
         <form onSubmit={submit} className="mt-8" noValidate>

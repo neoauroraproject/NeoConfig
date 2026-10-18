@@ -150,7 +150,14 @@ export function Intro({
 
   // One glow color per step, from the brand: primary → accent → signal.
   const glow = step === 'welcome' ? 'var(--brand)' : step === 'install' ? 'var(--accent)' : 'var(--signal, var(--brand))';
-  const title = step === 'welcome' ? c.welcome : step === 'install' ? c.install : c.notify;
+  const base = step === 'welcome' ? c.welcome : step === 'install' ? c.install : c.notify;
+  const own = locale === (brand.defaultLocale === 'en' ? 'en' : 'fa') ? brand.copy ?? {} : {};
+  const key = step === 'welcome' ? 'Welcome' : step === 'install' ? 'Install' : 'Notify';
+  const title = {
+    a: own[`intro${key}A` as const] || base.a,
+    b: own[`intro${key}B` as const] || base.b,
+    body: own[`intro${key}Body` as const] || base.body,
+  };
   const ink = useMemo(() => readableInk(step === 'welcome' ? '--brand' : step === 'install' ? '--accent' : '--signal'), [step]);
 
   async function primary() {
@@ -224,7 +231,7 @@ export function Intro({
 
       <div className="relative mt-auto px-7 pb-[max(1.75rem,env(safe-area-inset-bottom))]">
         <div className="flex items-center gap-2.5">
-          <BrandMark brand={brand} size={28} />
+          <BrandMark brand={brand} size={28} onDark />
           <span className="text-[15px] font-semibold">{brand.appName}</span>
         </div>
 

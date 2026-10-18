@@ -68,12 +68,33 @@ export type RenewalPlan = {
 export const THEME_IDS = ['mist', 'graphite', 'sage', 'moss', 'pearl'] as const;
 export type ThemeId = (typeof THEME_IDS)[number];
 
+/** Texts a brand may reword (first screen and intro), in its default language. */
+export type BrandCopy = Partial<
+  Record<
+    | 'onboardTitle'
+    | 'onboardBody'
+    | 'introWelcomeA'
+    | 'introWelcomeB'
+    | 'introWelcomeBody'
+    | 'introInstallA'
+    | 'introInstallB'
+    | 'introInstallBody'
+    | 'introNotifyA'
+    | 'introNotifyB'
+    | 'introNotifyBody',
+    string
+  >
+>;
+
 export type Branding = {
   slug: string;
   appName: string;
   shortName: string;
   tagline: string | null;
   logoUrl: string | null;
+  /** Light-colored logo for dark themes; falls back to logoUrl. */
+  logoDarkUrl?: string | null;
+  copy?: BrandCopy;
   iconUrl: string | null;
   primaryColor: string;
   accentColor: string;

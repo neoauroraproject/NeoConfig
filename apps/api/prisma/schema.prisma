@@ -165,6 +165,12 @@ model Brand {
   /// Uploaded logo (PNG/JPEG/WebP, ≤512 KB), served at /api/v1/public/brands/<slug>/logo
   logoData              Bytes?
   logoMime              String?
+  /// Light logo for the dark themes (graphite, sage, moss, pearl)
+  logoDarkData    Bytes?
+  logoDarkMime    String?
+  logoDarkUrl     String?
+  /// Brand's own wording for the first screen and the intro (JSON, default locale)
+  copyJson        String  @default("{}")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -34,6 +34,16 @@ export class PublicController {
     return this.publicService.lookupForTenant(body.url, body.tenant);
   }
 
+  @Get('brands/:slug/logo-dark')
+  async logoDark(@Param('slug') slug: string, @Res() res: Response) {
+    const logo = (await this.brands.logo(slug, 'dark')) ?? (await this.brands.logo(slug));
+    if (!logo) throw new NotFoundException();
+    res.setHeader('Content-Type', logo.mime);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(logo.data);
+  }
+
   @Get('brands/:slug/logo')
   async logo(@Param('slug') slug: string, @Res() res: Response) {
     const logo = await this.brands.logo(slug);

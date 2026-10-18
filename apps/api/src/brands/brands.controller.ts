@@ -1,7 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Query, Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { Type } from 'class-transformer';
-import {
+import { IsObject,
   IsArray,
   IsBoolean,
   IsIn,
@@ -46,6 +46,7 @@ class BrandDto {
   @IsOptional() @IsString() accentColor?: string;
   @IsOptional() @IsString() theme?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) themeChoices?: string[];
+  @IsOptional() @IsObject() copy?: Record<string, string>;
   @IsOptional() @IsString() defaultLocale?: string;
   @IsOptional() @IsString() supportUrl?: string | null;
   @IsOptional() @IsString() supportTelegram?: string | null;
@@ -120,13 +121,13 @@ export class BrandsController {
   }
 
   @Post(':id/logo')
-  uploadLogo(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: LogoDto) {
-    return this.brands.uploadLogo(user, id, body.dataUrl);
+  uploadLogo(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() body: LogoDto, @Query('variant') variant?: string) {
+    return this.brands.uploadLogo(user, id, body.dataUrl, variant === 'dark' ? 'dark' : 'light');
   }
 
   @Delete(':id/logo')
-  removeLogo(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.brands.removeLogo(user, id);
+  removeLogo(@CurrentUser() user: AuthUser, @Param('id') id: string, @Query('variant') variant?: string) {
+    return this.brands.removeLogo(user, id, variant === 'dark' ? 'dark' : 'light');
   }
 
   @Post(':id/domains/:domainId/ssl')

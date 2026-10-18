@@ -64,6 +64,7 @@ export type BrandInput = Partial<Record<(typeof EDITABLE)[number], string | bool
   plans?: PlanInput[];
   panelIds?: string[];
   themeChoices?: string[];
+  copy?: Record<string, string>;
   /** Write-only. Empty string clears it. */
   telegramBotToken?: string;
 };
@@ -126,6 +127,8 @@ export class BrandsService {
       shortName: b?.shortName ?? 'NeoConfig',
       tagline: b?.tagline ?? null,
       logoUrl: b?.logoUrl ?? null,
+      logoDarkUrl: b?.logoDarkUrl ?? null,
+      copy: parseCopy(b?.copyJson),
       iconUrl: b?.iconUrl ?? null,
       primaryColor: b?.primaryColor ?? '#4F5BD5',
       accentColor: b?.accentColor ?? '#FF6A1A',
@@ -211,13 +214,23 @@ export class BrandsService {
     if (brand.renewalPanelId) this.live.delete(brand.renewalPanelId);
     if (typeof data.renewalPanelId === 'string') {
       const ok = await this.prisma.panelConnection.findFirst({ where: { id: data.renewalPanelId, orgId: brand.orgId, type: 'hmpanel' } });
-      if (!ok) throw new BadRequestException('Choose one of your HMPanel connections');
+      if (!ok && data.renewalPanelId === brand.renewalPanelId) {
+        // The saved connection was deleted since: drop the link instead of blocking every save.
+        data.renewalPanelId = null;
+        data.renewalVia = 'local';
+        data.cardFromPanel = false;
+        data.plansSync = false;
+        data.purchaseEnabled = false;
+      } else if (!ok) {
+        throw new BadRequestException('Choose one of your HMPanel connections');
+      }
     }
     if (data.renewalVia === 'hmpanel' && !(data.renewalPanelId ?? brand.renewalPanelId)) {
       throw new BadRequestException('Pick the HMPanel connection before sending renewals to its store');
     }
 
     if (input.plans) data.plansJson = JSON.stringify(cleanPlans(input.plans));
+    if (input.copy) data.copyJson = JSON.stringify(parseCopy(JSON.stringify(input.copy)));
     if (input.themeChoices) data.themeChoices = themeList('mist', input.themeChoices).filter((t) => input.themeChoices!.includes(t));
     if (admin) {
       if (input.slug !== undefined) {
@@ -398,32 +411,41 @@ export class BrandsService {
   }
 
   /** Logo as a data URL (PNG/JPEG/WebP ≤512 KB); served from our own origin. */
-  async uploadLogo(user: AuthUser, id: string, dataUrl: string) {
+  /** variant light: the default logo (shown on light themes). dark: a light-colored logo for dark themes. */
+  async uploadLogo(user: AuthUser, id: string, dataUrl: string, variant: 'light' | 'dark' = 'light') {
     const brand = await this.mustOwn(user, id);
     const m = /^data:(image\/(png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl || '');
     if (!m) throw new BadRequestException('Upload a PNG, JPEG or WebP image');
     const data = Buffer.from(m[3], 'base64');
     if (data.length > 512 * 1024) throw new BadRequestException('Logo must be under 512 KB');
+    const v = Date.now().toString(36);
     await this.prisma.brand.update({
       where: { id: brand.id },
-      data: {
-        logoData: new Uint8Array(data),
-        logoMime: m[1],
-        logoUrl: `/api/v1/public/brands/${brand.slug}/logo?v=${Date.now().toString(36)}`,
-      },
+      data:
+        variant === 'dark'
+          ? { logoDarkData: new Uint8Array(data), logoDarkMime: m[1], logoDarkUrl: `/api/v1/public/brands/${brand.slug}/logo-dark?v=${v}` }
+          : { logoData: new Uint8Array(data), logoMime: m[1], logoUrl: `/api/v1/public/brands/${brand.slug}/logo?v=${v}` },
     });
     return this.get(user, id);
   }
 
-  async removeLogo(user: AuthUser, id: string) {
+  async removeLogo(user: AuthUser, id: string, variant: 'light' | 'dark' = 'light') {
     const brand = await this.mustOwn(user, id);
-    await this.prisma.brand.update({ where: { id: brand.id }, data: { logoData: null, logoMime: null, logoUrl: null } });
+    await this.prisma.brand.update({
+      where: { id: brand.id },
+      data: variant === 'dark' ? { logoDarkData: null, logoDarkMime: null, logoDarkUrl: null } : { logoData: null, logoMime: null, logoUrl: null },
+    });
     return this.get(user, id);
   }
 
-  async logo(slug: string) {
-    const b = await this.prisma.brand.findUnique({ where: { slug }, select: { logoData: true, logoMime: true } });
-    return b?.logoData && b.logoMime ? { data: Buffer.from(b.logoData), mime: b.logoMime } : null;
+  async logo(slug: string, variant: 'light' | 'dark' = 'light') {
+    const b = await this.prisma.brand.findUnique({
+      where: { slug },
+      select: { logoData: true, logoMime: true, logoDarkData: true, logoDarkMime: true },
+    });
+    if (!b) return null;
+    if (variant === 'dark') return b.logoDarkData && b.logoDarkMime ? { data: Buffer.from(b.logoDarkData), mime: b.logoDarkMime } : null;
+    return b.logoData && b.logoMime ? { data: Buffer.from(b.logoData), mime: b.logoMime } : null;
   }
 
   // ---------- HMPanel store ----------
@@ -593,6 +615,8 @@ export class BrandsService {
       shortName: r.shortName,
       tagline: r.tagline,
       logoUrl: r.logoUrl,
+      logoDarkUrl: r.logoDarkUrl,
+      copy: parseCopy(r.copyJson),
       iconUrl: r.iconUrl,
       primaryColor: r.primaryColor,
       accentColor: r.accentColor,
@@ -697,4 +721,26 @@ export function hmError(err: unknown) {
   if (status === 403) return `HMPanel refused: ${msg} (needs an active Premium license, the store module and the store.* scopes)`;
   if (status === 401) return 'HMPanel rejected the API key';
   return msg;
+}
+
+/** Texts a brand may reword on the first screen and the intro; anything else is dropped. */
+export const COPY_KEYS = [
+  'onboardTitle', 'onboardBody',
+  'introWelcomeA', 'introWelcomeB', 'introWelcomeBody',
+  'introInstallA', 'introInstallB', 'introInstallBody',
+  'introNotifyA', 'introNotifyB', 'introNotifyBody',
+] as const;
+
+export function parseCopy(json: string | null | undefined): Record<string, string> {
+  try {
+    const raw = JSON.parse(json || '{}') as Record<string, unknown>;
+    const out: Record<string, string> = {};
+    for (const k of COPY_KEYS) {
+      const v = raw?.[k];
+      if (typeof v === 'string' && v.trim()) out[k] = v.trim().slice(0, k.endsWith('Body') ? 240 : 60);
+    }
+    return out;
+  } catch {
+    return {};
+  }
 }

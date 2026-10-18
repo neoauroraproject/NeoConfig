@@ -1,4 +1,4 @@
-import { RenewalPlan, ThemeId, request } from '@/lib/api';
+import { BrandCopy, RenewalPlan, ThemeId, request } from '@/lib/api';
 
 export type Role = 'SUPER_ADMIN' | 'ORG_ADMIN' | 'RESELLER' | 'USER';
 
@@ -9,6 +9,8 @@ export type AdminBrand = {
   shortName: string;
   tagline: string | null;
   logoUrl: string | null;
+  logoDarkUrl: string | null;
+  copy: BrandCopy;
   iconUrl: string | null;
   primaryColor: string;
   accentColor: string;
@@ -207,8 +209,8 @@ export const adminApi = {
     request<AdminBrand>(`/api/v1/admin/brands/${id}/domains/${domainId}/check`, { method: 'POST', token: tk() }),
   telegramTest: (id: string) =>
     request<{ ok: boolean; buttons?: boolean; buttonsMessage?: string }>(`/api/v1/admin/brands/${id}/telegram/test`, { method: 'POST', token: tk() }),
-  uploadLogo: (id: string, dataUrl: string) =>
-    request<AdminBrand>(`/api/v1/admin/brands/${id}/logo`, { method: 'POST', token: tk(), body: json({ dataUrl }) }),
+  uploadLogo: (id: string, dataUrl: string, variant: 'light' | 'dark' = 'light') =>
+    request<AdminBrand>(`/api/v1/admin/brands/${id}/logo?variant=${variant}`, { method: 'POST', token: tk(), body: json({ dataUrl }) }),
   pendingRenewals: () => request<{ count: number; latestAt: string | null }>('/api/v1/admin/renewals/pending', { token: tk() }),
   hmpanelPanels: (id: string) =>
     request<Array<{ id: string; name: string; host: string; healthy: boolean | null; inBrand: boolean }>>(`/api/v1/admin/brands/${id}/hmpanel`, {
@@ -218,7 +220,8 @@ export const adminApi = {
   hmpanelCards: (id: string, panelId: string) => request<HmCard[]>(`/api/v1/admin/brands/${id}/hmpanel/${panelId}/cards`, { token: tk() }),
   hmpanelProducts: (id: string, panelId: string) =>
     request<HmProduct[]>(`/api/v1/admin/brands/${id}/hmpanel/${panelId}/products`, { token: tk() }),
-  removeLogo: (id: string) => request<AdminBrand>(`/api/v1/admin/brands/${id}/logo`, { method: 'DELETE', token: tk() }),
+  removeLogo: (id: string, variant: 'light' | 'dark' = 'light') =>
+    request<AdminBrand>(`/api/v1/admin/brands/${id}/logo?variant=${variant}`, { method: 'DELETE', token: tk() }),
   broadcast: (id: string, title: string, body: string) =>
     request<{ sent: number; total: number }>(`/api/v1/admin/brands/${id}/push`, {
       method: 'POST',

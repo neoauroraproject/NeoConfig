@@ -2,7 +2,7 @@
 
 import { ArrowRight, ExternalLink, Globe, Plus, RefreshCw, Send, ShieldCheck, Trash2 } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { THEME_IDS, type Branding, type ThemeId } from '@/lib/api';
+import { THEME_IDS, type BrandCopy, type Branding, type ThemeId } from '@/lib/api';
 import { THEME_SWATCH } from '@/lib/themes';
 import { relativeTime } from '@/lib/format';
 import { AdminBrand, Member, Panel, adminApi } from './adminApi';
@@ -194,6 +194,7 @@ function BrandEditor({
         accentColor: draft.accentColor,
         theme: draft.theme,
         themeChoices: draft.themeChoices ?? [],
+        copy: draft.copy ?? {},
         renewalVia: draft.renewalVia ?? 'local',
         renewalPanelId: draft.renewalPanelId ?? null,
         cardFromPanel: draft.cardFromPanel ?? false,
@@ -242,6 +243,8 @@ function BrandEditor({
       shortName: draft.shortName,
       tagline: draft.tagline,
       logoUrl: draft.logoUrl || null,
+      logoDarkUrl: draft.logoDarkUrl || null,
+      copy: draft.copy ?? {},
       iconUrl: draft.iconUrl || null,
       primaryColor: draft.primaryColor,
       accentColor: draft.accentColor,
@@ -315,7 +318,7 @@ function BrandEditor({
               brandId={brand.id}
               onLogo={(b) => {
                 onChange(b);
-                setDraft((d) => ({ ...d, logoUrl: b.logoUrl }));
+                setDraft((d) => ({ ...d, logoUrl: b.logoUrl, logoDarkUrl: b.logoDarkUrl }));
               }}
             />
           )}
@@ -383,9 +386,27 @@ function LookTab({ draft, set, brandId, onLogo }: { draft: AdminBrand; set: SetF
           <Field label="جملهٔ بالای صفحهٔ ورود" htmlFor="b-tag" hint="خالی بماند: «وضعیت سرویس، همیشه دم دست»">
             <input id="b-tag" className="field" value={draft.tagline ?? ''} onChange={(e) => set('tagline', e.target.value)} />
           </Field>
-          <LogoField brandId={brandId} value={draft.logoUrl} onSaved={onLogo} />
+        </div>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <LogoField
+            brandId={brandId}
+            variant="light"
+            label="لوگو برای پوستهٔ روشن (مه)"
+            hint="لوگوی تیره یا رنگی که روی زمینهٔ روشن خوانا باشد."
+            value={draft.logoUrl}
+            onSaved={onLogo}
+          />
+          <LogoField
+            brandId={brandId}
+            variant="dark"
+            label="لوگو برای پوسته‌های تیره"
+            hint="لوگوی روشن/سفید برای گرافیت، مریم‌گلی، خزه، مروارید و صفحهٔ معرفی. خالی بماند، همان لوگوی اول استفاده می‌شود."
+            value={draft.logoDarkUrl}
+            onSaved={onLogo}
+          />
         </div>
       </Card>
+      <CopyCard draft={draft} set={set} />
       <Card>
         <h2 className="mb-4 font-medium">رنگ و پوسته</h2>
         <p className="mb-2 text-xs text-[var(--ink-2)]">پوستهٔ پیش‌فرض</p>
@@ -463,7 +484,22 @@ function LookTab({ draft, set, brandId, onLogo }: { draft: AdminBrand; set: SetF
 }
 
 /** Uploads immediately (resized to 256px) — the logo is not part of the draft save. */
-function LogoField({ brandId, value, onSaved }: { brandId: string; value: string | null; onSaved: (b: AdminBrand) => void }) {
+function LogoField({
+  brandId,
+  value,
+  onSaved,
+  variant,
+  label,
+  hint,
+}: {
+  brandId: string;
+  value: string | null;
+  onSaved: (b: AdminBrand) => void;
+  variant: 'light' | 'dark';
+  label: string;
+  hint: string;
+}) {
+  const inputId = `b-logo-${variant}`;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -479,7 +515,7 @@ function LogoField({ brandId, value, onSaved }: { brandId: string; value: string
       canvas.width = Math.round(bitmap.width * scale);
       canvas.height = Math.round(bitmap.height * scale);
       canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      onSaved(await adminApi.uploadLogo(brandId, canvas.toDataURL('image/png')));
+      onSaved(await adminApi.uploadLogo(brandId, canvas.toDataURL('image/png'), variant));
     } catch (e) {
       setError(e instanceof Error && e.message !== 'network' ? errMsg(e) : 'این فایل تصویر قابل خواندن نیست');
     } finally {
@@ -488,23 +524,100 @@ function LogoField({ brandId, value, onSaved }: { brandId: string; value: string
   }
 
   return (
-    <Field label="لوگو" htmlFor="b-logo" hint="PNG، JPG یا WebP؛ مربعی بهتر است. خالی بماند، نشان حلقه‌ای با رنگ برند ساخته می‌شود." error={error}>
+    <Field label={label} htmlFor={inputId} hint={hint} error={error}>
       <div className="flex items-center gap-3">
-        <span className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface-2)]">
+        <span
+          className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl border border-[var(--line)]"
+          style={{ background: variant === 'dark' ? '#1a1b1f' : '#f1f2f7' }}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           {value ? <img src={value} alt="لوگوی فعلی" className="h-full w-full object-cover" /> : <span className="text-xs text-[var(--ink-3)]">ندارد</span>}
         </span>
-        <input id="b-logo" type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(e) => pick(e.target.files?.[0])} />
-        <label htmlFor="b-logo" className="inline-flex h-10 cursor-pointer items-center rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 text-sm">
+        <input id={inputId} type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={(e) => pick(e.target.files?.[0])} />
+        <label htmlFor={inputId} className="inline-flex h-10 cursor-pointer items-center rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 text-sm">
           {busy ? 'در حال آپلود…' : value ? 'تغییر لوگو' : 'آپلود لوگو'}
         </label>
         {value && !busy && (
-          <Button variant="ghost" onClick={async () => onSaved(await adminApi.removeLogo(brandId))}>
+          <Button variant="ghost" onClick={async () => onSaved(await adminApi.removeLogo(brandId, variant))}>
             حذف
           </Button>
         )}
       </div>
     </Field>
+  );
+}
+
+const COPY_FIELDS: Array<{ group: string; fields: Array<{ key: keyof BrandCopy; label: string; def: string; long?: boolean }> }> = [
+  {
+    group: 'صفحهٔ ورود (افزودن اشتراک)',
+    fields: [
+      { key: 'onboardTitle', label: 'عنوان', def: 'اشتراکت را / یک‌جا ببین', long: true },
+      { key: 'onboardBody', label: 'توضیح', def: 'لینک اشتراک را بچسبان تا حجم باقی‌مانده، روزهای مانده و وضعیت اتصال را ببینی.', long: true },
+    ],
+  },
+  {
+    group: 'معرفی — مرحلهٔ خوش‌آمد',
+    fields: [
+      { key: 'introWelcomeA', label: 'خط اول عنوان', def: 'وضعیت سرویس،' },
+      { key: 'introWelcomeB', label: 'خط دوم (رنگی)', def: 'همیشه دم دستت' },
+      { key: 'introWelcomeBody', label: 'توضیح', def: 'حجم باقی‌مانده، روزهای مانده و اتصال را یک‌جا ببین و با یک لمس تمدید کن.', long: true },
+    ],
+  },
+  {
+    group: 'معرفی — نصب روی صفحهٔ اصلی',
+    fields: [
+      { key: 'introInstallA', label: 'خط اول عنوان', def: 'نصب روی' },
+      { key: 'introInstallB', label: 'خط دوم (رنگی)', def: 'صفحهٔ اصلی' },
+      { key: 'introInstallBody', label: 'توضیح', def: 'مثل یک اپلیکیشن واقعی باز می‌شود، سریع‌تر است و اعلان‌ها کامل کار می‌کنند.', long: true },
+    ],
+  },
+  {
+    group: 'معرفی — اعلان‌ها',
+    fields: [
+      { key: 'introNotifyA', label: 'خط اول عنوان', def: 'قبل از تمام شدن،' },
+      { key: 'introNotifyB', label: 'خط دوم (رنگی)', def: 'خبرت می‌کنیم' },
+      { key: 'introNotifyBody', label: 'توضیح', def: 'وقتی حجم یا زمان رو به پایان باشد یا تمدیدت انجام شود، اعلان می‌گیری؛ حتی وقتی اپ بسته است.', long: true },
+    ],
+  },
+];
+
+/** The brand's own wording for the first screen and the intro; empty fields keep the default text. */
+function CopyCard({ draft, set }: { draft: AdminBrand; set: SetFn }) {
+  const copy = draft.copy ?? {};
+  const update = (key: keyof BrandCopy, value: string) => set('copy', { ...copy, [key]: value });
+  return (
+    <Card>
+      <h2 className="font-medium">متن‌های صفحهٔ اول و معرفی</h2>
+      <p className="mt-1 text-xs leading-6 text-[var(--ink-3)]">
+        هر فیلد خالی بماند، متن پیش‌فرض (که کم‌رنگ نوشته شده) نمایش داده می‌شود. برای عنوان صفحهٔ ورود، خط دوم را بعد از Enter بنویس. این متن‌ها برای زبان پیش‌فرض برند اعمال می‌شوند.
+      </p>
+      <div className="mt-4 space-y-5">
+        {COPY_FIELDS.map((g) => (
+          <fieldset key={g.group}>
+            <legend className="mb-2 text-[13px] font-medium text-[var(--ink-2)]">{g.group}</legend>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {g.fields.map((f) => (
+                <label key={f.key} className={`block ${f.long ? 'sm:col-span-2' : ''}`}>
+                  <span className="mb-1 block text-xs text-[var(--ink-3)]">{f.label}</span>
+                  {f.long ? (
+                    <textarea
+                      className="field min-h-[4.5rem] resize-y"
+                      rows={2}
+                      maxLength={f.key.endsWith('Body') ? 240 : 60}
+                      value={copy[f.key] ?? ''}
+                      placeholder={f.def.replace(' / ', '\n')}
+                      onChange={(e) => update(f.key, e.target.value)}
+                    />
+                  ) : (
+                    <input className="field" maxLength={60} value={copy[f.key] ?? ''} placeholder={f.def} onChange={(e) => update(f.key, e.target.value)} />
+                  )}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        ))}
+      </div>
+    </Card>
   );
 }
 

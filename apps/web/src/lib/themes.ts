@@ -1,5 +1,8 @@
 import type { ThemeId } from './api';
 
+/** Themes with a dark canvas: they show the light-colored logo. */
+export const DARK_THEMES: ReadonlySet<ThemeId> = new Set<ThemeId>(['graphite', 'sage', 'moss', 'pearl']);
+
 /** Page background per theme: the status bar / browser chrome color. */
 export const THEME_CANVAS: Record<ThemeId, string> = {
   mist: '#e8e9f0',

@@ -122,6 +122,12 @@ model Brand {
   renewalVia      String  @default("local")
   /// HMPanel connection used for the store, cards and products
   renewalPanelId  String?
+  /// Show customers the HMPanel store card (live) instead of the typed one
+  cardFromPanel   Boolean @default(false)
+  /// Which HMPanel card; empty = the first enabled one
+  hmCardId        String?
+  /// Keep linked plans' days, data and price in step with HMPanel products
+  plansSync       Boolean @default(false)
   /// Extra themes the customer may switch to in the app menu
   themeChoices    String[] @default([])
   defaultLocale   String  @default("fa")

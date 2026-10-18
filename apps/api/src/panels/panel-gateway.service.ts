@@ -142,6 +142,9 @@ export class PanelGatewayService {
     const cfg = this.creds(row);
     const hm = this.hmpanel;
     return {
+      account: () => hm.account(cfg),
+      premium: () => hm.premium(cfg),
+      store: () => hm.store(cfg),
       cards: () => hm.paymentCards(cfg),
       products: () => hm.storeProducts(cfg),
       createOrder: (body: Parameters<HmPanelClientService['createOrder']>[1]) => hm.createOrder(cfg, body),

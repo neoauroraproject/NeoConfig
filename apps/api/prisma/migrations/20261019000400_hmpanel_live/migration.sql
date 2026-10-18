@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "Brand" ADD COLUMN "cardFromPanel" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "hmCardId" TEXT,
+ADD COLUMN "plansSync" BOOLEAN NOT NULL DEFAULT false;

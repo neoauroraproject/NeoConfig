@@ -64,6 +64,9 @@ class BrandDto {
   @IsOptional() @IsString() @MaxLength(64) telegramChatId?: string | null;
   @IsOptional() @IsIn(['local', 'hmpanel']) renewalVia?: string;
   @IsOptional() @IsString() @MaxLength(64) renewalPanelId?: string | null;
+  @IsOptional() @IsBoolean() cardFromPanel?: boolean;
+  @IsOptional() @IsString() @MaxLength(64) hmCardId?: string | null;
+  @IsOptional() @IsBoolean() plansSync?: boolean;
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => PlanDto) plans?: PlanDto[];
   @IsOptional() @IsArray() @IsString({ each: true }) panelIds?: string[];
 }
@@ -131,6 +134,11 @@ export class BrandsController {
   @Get(':id/hmpanel')
   hmpanelPanels(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.brands.hmpanelPanels(user, id);
+  }
+
+  @Get(':id/hmpanel/:panelId/overview')
+  hmpanelOverview(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('panelId') panelId: string) {
+    return this.brands.hmpanelOverview(user, id, panelId);
   }
 
   @Get(':id/hmpanel/:panelId/cards')

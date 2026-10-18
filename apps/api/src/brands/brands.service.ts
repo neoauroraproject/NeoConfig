@@ -13,6 +13,7 @@ import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../auth/auth.types';
 import { brandScope, isOrgAdmin, requireOrgAdmin } from '../common/access/scope';
 import { encryptSecret } from '../common/crypto/secret.crypto';
+import { HmPanelCard, HmPanelProduct } from '../integrations/hmpanel/hmpanel.client';
 import { PanelGatewayService } from '../panels/panel-gateway.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
@@ -51,7 +52,7 @@ const EDITABLE = [
   'appName', 'shortName', 'tagline', 'logoUrl', 'iconUrl', 'primaryColor', 'accentColor',
   'theme', 'defaultLocale', 'supportUrl', 'supportTelegram', 'contactEmail', 'allowCopyLink',
   'renewalEnabled', 'cardNumber', 'cardHolder', 'bankName', 'renewalNote', 'expiryRemindersEnabled',
-  'telegramChatId', 'renewalVia', 'renewalPanelId',
+  'telegramChatId', 'renewalVia', 'renewalPanelId', 'cardFromPanel', 'hmCardId', 'plansSync',
 ] as const;
 
 export type BrandInput = Partial<Record<(typeof EDITABLE)[number], string | boolean | null>> & {
@@ -109,9 +110,9 @@ export class BrandsService {
     const plans = b
       ? parsePlans(b.plansJson).filter((p) => p.price.trim() && (b.renewalVia !== 'hmpanel' || p.productId))
       : [];
-    const renewal = b?.renewalEnabled && b.cardNumber && plans.length
+    const renewal = b?.renewalEnabled && (b.cardNumber || (b.cardFromPanel && b.renewalPanelId)) && plans.length
       ? {
-          cardNumber: b.cardNumber,
+          cardNumber: b.cardNumber ?? '',
           cardHolder: b.cardHolder,
           bankName: b.bankName,
           note: b.renewalNote,
@@ -204,6 +205,7 @@ export class BrandsService {
     const brand = await this.mustOwn(user, id);
     const admin = isOrgAdmin(user);
     const data: Prisma.BrandUncheckedUpdateInput = { ...this.editable(input) };
+    if (brand.renewalPanelId) this.live.delete(brand.renewalPanelId);
     if (typeof data.renewalPanelId === 'string') {
       const ok = await this.prisma.panelConnection.findFirst({ where: { id: data.renewalPanelId, orgId: brand.orgId, type: 'hmpanel' } });
       if (!ok) throw new BadRequestException('Choose one of your HMPanel connections');
@@ -360,7 +362,8 @@ export class BrandsService {
     for (const k of EDITABLE) {
       const v = input[k];
       if (v === undefined) continue;
-      if (k === 'allowCopyLink' || k === 'renewalEnabled' || k === 'expiryRemindersEnabled') out[k] = Boolean(v);
+      if (k === 'allowCopyLink' || k === 'renewalEnabled' || k === 'expiryRemindersEnabled' || k === 'cardFromPanel' || k === 'plansSync')
+        out[k] = Boolean(v);
       else if (k === 'theme') out[k] = THEMES.includes(v as never) ? v : 'mist';
       else if (k === 'renewalVia') out[k] = v === 'hmpanel' ? 'hmpanel' : 'local';
       else if (k === 'renewalPanelId') out[k] = typeof v === 'string' && v.trim() ? v.trim() : null;
@@ -426,11 +429,18 @@ export class BrandsService {
     const own = await this.prisma.brand.findUnique({ where: { id }, select: { panels: { select: { id: true } } } });
     const ids = own?.panels.map((p) => p.id) ?? [];
     const panels = await this.prisma.panelConnection.findMany({
-      where: { orgId: brand.orgId, type: 'hmpanel', ...(ids.length ? { id: { in: ids } } : {}) },
-      select: { id: true, name: true, baseUrl: true },
+      where: { orgId: brand.orgId, type: 'hmpanel' },
+      select: { id: true, name: true, baseUrl: true, lastTestOk: true },
       orderBy: { name: 'asc' },
     });
-    return panels.map((p) => ({ id: p.id, name: p.name, host: safeHost(p.baseUrl) }));
+    // inBrand=false: the brand searches only its picked panels, and this one isn't among them.
+    return panels.map((p) => ({
+      id: p.id,
+      name: p.name,
+      host: safeHost(p.baseUrl),
+      healthy: p.lastTestOk,
+      inBrand: !ids.length || ids.includes(p.id),
+    }));
   }
 
   private async hmpanelFor(user: AuthUser, id: string, panelId: string) {
@@ -439,6 +449,78 @@ export class BrandsService {
     const row = await this.prisma.panelConnection.findUnique({ where: { id: panelId } });
     if (!row) throw new NotFoundException('HMPanel connection not found');
     return this.gateway.hmStore(row);
+  }
+
+  /** Everything the HMPanel tab shows at once; each part fails on its own. */
+  async hmpanelOverview(user: AuthUser, id: string, panelId: string) {
+    const store = await this.hmpanelFor(user, id, panelId);
+    const part = async <T>(fn: () => Promise<T>) => {
+      try {
+        return { ok: true as const, data: await fn() };
+      } catch (err) {
+        return { ok: false as const, error: hmError(err) };
+      }
+    };
+    const [account, premium, shop, cards, products] = await Promise.all([
+      part(store.account),
+      part(store.premium),
+      part(store.store),
+      part(store.cards),
+      part(async () => (await store.products()).filter((p) => p.renewable && p.status === 'active' && !p.isTest)),
+    ]);
+    return { account, premium, store: shop, cards, products };
+  }
+
+  // ---------- live HMPanel data for the storefront ----------
+
+  private live = new Map<string, { at: number; cards: HmPanelCard[] | null; products: HmPanelProduct[] | null }>();
+
+  private async liveFor(panelId: string) {
+    const hit = this.live.get(panelId);
+    if (hit && Date.now() - hit.at < 5 * 60_000) return hit;
+    const row = await this.prisma.panelConnection.findUnique({ where: { id: panelId } });
+    if (!row || row.type !== 'hmpanel') return { at: Date.now(), cards: null, products: null };
+    const store = this.gateway.hmStore(row);
+    const [cards, products] = await Promise.all([store.cards().catch(() => null), store.products().catch(() => null)]);
+    // Keep the last good answer if HMPanel is briefly unreachable.
+    const entry = { at: Date.now(), cards: cards ?? hit?.cards ?? null, products: products ?? hit?.products ?? null };
+    this.live.set(panelId, entry);
+    return entry;
+  }
+
+  /** Public branding with the HMPanel card and product prices filled in live (cached 5 min). */
+  async toPublicLive(b: Brand | null) {
+    const pub = this.toPublic(b);
+    if (!b?.renewalPanelId || !pub.renewal || (!b.cardFromPanel && !b.plansSync)) return pub;
+    const live = await this.liveFor(b.renewalPanelId).catch(() => null);
+    if (!live) return b.cardNumber ? pub : { ...pub, renewal: null };
+    let renewal = pub.renewal;
+    if (b.cardFromPanel) {
+      const card = live.cards?.find((c) => c.id === b.hmCardId) ?? live.cards?.[0];
+      if (card) renewal = { ...renewal, cardNumber: card.cardNumber.replace(/\D/g, ''), cardHolder: card.cardHolder, bankName: card.bankName };
+      else if (!b.cardNumber) return { ...pub, renewal: null };
+    }
+    if (b.plansSync && live.products) {
+      const byId = new Map(live.products.map((p) => [p.id, p]));
+      renewal = {
+        ...renewal,
+        plans: renewal.plans.flatMap((plan) => {
+          if (!plan.productId) return [plan];
+          const p = byId.get(plan.productId);
+          if (!p || !p.renewable || p.status !== 'active') return [];
+          return [
+            {
+              ...plan,
+              days: p.durationDays,
+              gb: p.trafficBytes > 0 ? +(p.trafficBytes / 1024 ** 3).toFixed(2) : 0,
+              price: p.priceToman ? `${p.priceToman.toLocaleString('fa-IR')} تومان` : plan.price,
+            },
+          ];
+        }),
+      };
+      if (!renewal.plans.length) return { ...pub, renewal: null };
+    }
+    return { ...pub, renewal };
   }
 
   async hmpanelCards(user: AuthUser, id: string, panelId: string) {
@@ -513,6 +595,9 @@ export class BrandsService {
       themeChoices: r.themeChoices,
       renewalVia: r.renewalVia,
       renewalPanelId: r.renewalPanelId,
+      cardFromPanel: r.cardFromPanel,
+      hmCardId: r.hmCardId,
+      plansSync: r.plansSync,
       defaultLocale: r.defaultLocale,
       supportUrl: r.supportUrl,
       supportTelegram: r.supportTelegram,

@@ -36,10 +36,28 @@ export class AdminService {
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
-    const [brands, panels, pending, approvedMonth, devices, lookups, recentRenewals] = await Promise.all([
+    const weekAgo = new Date(Date.now() - 7 * DAY);
+    const [brands, panels, pending, approvedMonth, devices, lookups, recentRenewals, monthRows, decided14] = await Promise.all([
       this.prisma.brand.findMany({
         where: scope,
-        select: { id: true, appName: true, primaryColor: true, slug: true, active: true },
+        select: {
+          id: true,
+          appName: true,
+          primaryColor: true,
+          slug: true,
+          active: true,
+          logoUrl: true,
+          renewalEnabled: true,
+          cardNumber: true,
+          cardFromPanel: true,
+          plansJson: true,
+          renewalVia: true,
+          renewalPanelId: true,
+          telegramBotTokenEnc: true,
+          telegramChatId: true,
+          domains: { select: { domain: true, sslOk: true, dnsOk: true } },
+          _count: { select: { devices: true } },
+        },
         orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
       }),
       admin
@@ -63,7 +81,15 @@ export class AdminService {
         omit: { receiptData: true, subUrlEnc: true },
         include: { brand: { select: { appName: true, primaryColor: true } } },
         orderBy: { createdAt: 'desc' },
-        take: 6,
+        take: 8,
+      }),
+      this.prisma.renewalRequest.findMany({
+        where: { brand: scope, status: RenewalStatus.APPROVED, decidedAt: { gte: monthStart } },
+        select: { price: true },
+      }),
+      this.prisma.renewalRequest.findMany({
+        where: { brand: scope, decidedAt: { gte: since } },
+        select: { decidedAt: true, status: true },
       }),
     ]);
 
@@ -77,9 +103,47 @@ export class AdminService {
       if (idx >= 0 && idx < 14) days[idx][l.found ? 'found' : 'missed'] += 1;
     }
 
+    const renew14 = days.map((d) => ({ date: d.date, approved: 0, rejected: 0 }));
+    for (const r of decided14) {
+      if (!r.decidedAt) continue;
+      const idx = Math.floor((r.decidedAt.getTime() - since.getTime()) / DAY);
+      if (idx >= 0 && idx < 14) {
+        if (r.status === RenewalStatus.APPROVED) renew14[idx].approved += 1;
+        else if (r.status === RenewalStatus.REJECTED) renew14[idx].rejected += 1;
+      }
+    }
+    // Prices are free text ("۱۵۰٬۰۰۰ تومان"); sum the digits as toman.
+    const revenueMonth = monthRows.reduce((n, r) => n + priceToman(r.price), 0);
+    const active7d = await this.prisma.usageDay
+      .groupBy({ by: ['subId'], where: { brandId: { in: brands.map((b) => b.id) }, updatedAt: { gte: weekAgo } } })
+      .then((rows) => rows.length)
+      .catch(() => 0);
+
     return {
       role: user.role,
-      brands,
+      revenueMonth,
+      active7d,
+      renewals14d: renew14,
+      brands: brands.map((b) => {
+        const plans = safePlans(b.plansJson);
+        const card = Boolean(b.cardNumber) || (b.cardFromPanel && Boolean(b.renewalPanelId));
+        return {
+          id: b.id,
+          appName: b.appName,
+          primaryColor: b.primaryColor,
+          slug: b.slug,
+          active: b.active,
+          devices: b._count.devices,
+          setup: {
+            logo: Boolean(b.logoUrl),
+            domain: b.domains.some((d) => d.sslOk),
+            domainName: b.domains[0]?.domain ?? null,
+            renewal: b.renewalEnabled && card && plans > 0,
+            reviews: b.renewalVia === 'hmpanel' ? 'hmpanel' : b.telegramBotTokenEnc && b.telegramChatId ? 'telegram' : 'admin',
+            hmpanel: Boolean(b.renewalPanelId),
+          },
+        };
+      }),
       panels: panels.map((p) => ({
         id: p.id,
         name: p.name,
@@ -216,5 +280,20 @@ export class AdminService {
     await this.prisma.user.delete({ where: { id } });
     await this.audit.log({ orgId, userId: user.id, action: 'team.delete', resource: 'user', resourceId: id });
     return { ok: true };
+  }
+}
+
+function priceToman(price: string) {
+  const digits = price.replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/\D/g, '');
+  const n = Number(digits.slice(0, 12));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function safePlans(json: string) {
+  try {
+    const arr = JSON.parse(json) as Array<{ price?: string }>;
+    return Array.isArray(arr) ? arr.filter((p) => p?.price?.trim()).length : 0;
+  } catch {
+    return 0;
   }
 }

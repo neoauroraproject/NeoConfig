@@ -227,7 +227,7 @@ export function HmPanelRenewal({ draft, set }: { draft: AdminBrand; set: SetFn }
   );
 }
 
-function productService(p: HmProduct): 'xui' | 'pasarguard' | undefined {
+export function productService(p: HmProduct): 'xui' | 'pasarguard' | undefined {
   const id = (p.providerId || '').toLowerCase();
   if (id.includes('pasarguard') || id.includes('marzban')) return 'pasarguard';
   if (id.includes('xui') || id.includes('3x')) return 'xui';
@@ -237,7 +237,7 @@ function productService(p: HmProduct): 'xui' | 'pasarguard' | undefined {
 const KIND_LABEL = { xui: 'ثنایی', pasarguard: 'پاسارگارد' } as const;
 
 /** Choose which store products become plans, grouped by category and filterable by panel type. */
-function ProductPicker({
+export function ProductPicker({
   products,
   picked,
   setPicked,

@@ -7,7 +7,7 @@ import { THEME_SWATCH } from '@/lib/themes';
 import { relativeTime } from '@/lib/format';
 import { AdminBrand, Member, Panel, adminApi } from './adminApi';
 import { PhonePreview } from './PhonePreview';
-import { HmPanelRenewal } from './HmPanelRenewal';
+import { HmPanelTab } from './HmPanelTab';
 import { PlansEditor } from './PlansEditor';
 import { Button, Card, Empty, Field, PageHeader, StatusDot, Toggle, errMsg } from './ui';
 
@@ -154,7 +154,7 @@ function NewBrand({ onCancel, onCreated }: { onCancel: () => void; onCreated: (b
   );
 }
 
-type Tab = 'look' | 'domains' | 'renewal' | 'access' | 'notify';
+type Tab = 'look' | 'domains' | 'renewal' | 'hmpanel' | 'access' | 'notify';
 
 function BrandEditor({
   brand,
@@ -196,6 +196,9 @@ function BrandEditor({
         themeChoices: draft.themeChoices ?? [],
         renewalVia: draft.renewalVia ?? 'local',
         renewalPanelId: draft.renewalPanelId ?? null,
+        cardFromPanel: draft.cardFromPanel ?? false,
+        hmCardId: draft.hmCardId ?? null,
+        plansSync: draft.plansSync ?? false,
         defaultLocale: draft.defaultLocale,
         supportUrl: draft.supportUrl ?? '',
         supportTelegram: draft.supportTelegram ?? '',
@@ -258,6 +261,7 @@ function BrandEditor({
     ['look', 'ظاهر'],
     ['domains', 'دامنه'],
     ['renewal', 'تمدید'],
+    ['hmpanel', 'HMPanel'],
     ...(isAdmin ? ([['access', 'پنل و نماینده']] as Array<[Tab, string]>) : []),
     ['notify', 'اعلان'],
   ];
@@ -313,7 +317,18 @@ function BrandEditor({
             />
           )}
           {tab === 'domains' && <DomainsTab brand={brand} draft={draft} set={set} isAdmin={isAdmin} onChange={(b) => { onChange(b); setDraft((d) => ({ ...d, domains: b.domains })); }} />}
-          {tab === 'renewal' && <RenewalTab draft={draft} set={set} />}
+          {tab === 'renewal' && <RenewalTab draft={draft} set={set} openHm={() => setTab('hmpanel')} />}
+          {tab === 'hmpanel' && (
+            <HmPanelTab
+              draft={draft}
+              set={set}
+              isAdmin={isAdmin}
+              goPanels={() => {
+                window.location.hash = 'panels';
+                window.location.reload();
+              }}
+            />
+          )}
           {tab === 'access' && isAdmin && <AccessTab draft={draft} set={set} onDeleted={onDeleted} />}
           {tab === 'notify' && (
             <>
@@ -596,12 +611,12 @@ function DomainsTab({
   );
 }
 
-function RenewalTab({ draft, set }: { draft: AdminBrand; set: SetFn }) {
+function RenewalTab({ draft, set, openHm }: { draft: AdminBrand; set: SetFn; openHm: () => void }) {
   const plans = draft.plans;
   const usable = plans.filter((p) => p.title.trim() && p.price.trim());
   const missing = [
     !draft.renewalEnabled && 'روشن کردن تمدید',
-    !(draft.cardNumber && draft.cardNumber.replace(/\D/g, '').length >= 16) && 'شماره کارت ۱۶ رقمی',
+    !(draft.cardFromPanel && draft.renewalPanelId) && !(draft.cardNumber && draft.cardNumber.replace(/\D/g, '').length >= 16) && 'شماره کارت ۱۶ رقمی',
     usable.length === 0 && 'حداقل یک پلن با عنوان و قیمت',
   ].filter(Boolean) as string[];
   return (
@@ -618,7 +633,7 @@ function RenewalTab({ draft, set }: { draft: AdminBrand; set: SetFn }) {
         <Toggle id="r-on" label="تمدید با کارت به کارت در اپ کاربر" checked={draft.renewalEnabled} onChange={(v) => set('renewalEnabled', v)} />
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <Field label="شماره کارت" htmlFor="r-card">
-            <input id="r-card" dir="ltr" inputMode="numeric" className="field num" value={draft.cardNumber ?? ''} onChange={(e) => set('cardNumber', e.target.value.replace(/[^\d ]/g, ''))} placeholder="6037 ...." />
+            <input id="r-card" dir="ltr" inputMode="numeric" className="field num" disabled={draft.cardFromPanel && Boolean(draft.renewalPanelId)} value={draft.cardNumber ?? ''} onChange={(e) => set('cardNumber', e.target.value.replace(/[^\d ]/g, ''))} placeholder="6037 ...." />
           </Field>
           <Field label="به نام" htmlFor="r-holder">
             <input id="r-holder" className="field" value={draft.cardHolder ?? ''} onChange={(e) => set('cardHolder', e.target.value)} />
@@ -631,7 +646,20 @@ function RenewalTab({ draft, set }: { draft: AdminBrand; set: SetFn }) {
           </Field>
         </div>
       </Card>
-      <HmPanelRenewal draft={draft} set={set} />
+      <button
+        type="button"
+        onClick={openHm}
+        className="flex w-full items-center gap-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-start text-sm hover:bg-[var(--surface-2)]"
+      >
+        <span className="flex-1">
+          {draft.renewalPanelId
+            ? draft.renewalVia === 'hmpanel'
+              ? 'رسیدها به فروشگاه و ربات HMPanel می‌روند'
+              : 'HMPanel وصل است؛ کارت‌ها و پلن‌ها را از آنجا بگیر'
+            : 'HMPanel داری؟ کارت‌ها، پلن‌ها، فروشگاه و ربات را از آنجا وصل کن'}
+        </span>
+        <span className="text-[var(--brand)]">تب HMPanel ←</span>
+      </button>
       <PlansEditor plans={plans} onChange={(next) => set('plans', next)} />
     </div>
   );

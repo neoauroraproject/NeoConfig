@@ -16,6 +16,9 @@ export type AdminBrand = {
   themeChoices: ThemeId[];
   renewalVia: 'local' | 'hmpanel';
   renewalPanelId: string | null;
+  cardFromPanel: boolean;
+  hmCardId: string | null;
+  plansSync: boolean;
   defaultLocale: string;
   supportUrl: string | null;
   supportTelegram: string | null;
@@ -59,9 +62,21 @@ export type Panel = {
   createdAt: string;
 };
 
+export type BrandSetup = {
+  logo: boolean;
+  domain: boolean;
+  domainName: string | null;
+  renewal: boolean;
+  reviews: 'hmpanel' | 'telegram' | 'admin';
+  hmpanel: boolean;
+};
+
 export type Overview = {
   role: Role;
-  brands: Array<{ id: string; appName: string; primaryColor: string; slug: string; active: boolean }>;
+  revenueMonth: number;
+  active7d: number;
+  renewals14d: Array<{ date: string; approved: number; rejected: number }>;
+  brands: Array<{ id: string; appName: string; primaryColor: string; slug: string; active: boolean; devices: number; setup: BrandSetup }>;
   panels: Array<{ id: string; name: string; type: string; healthy: boolean | null; lastTestAt: string | null; message: string | null }>;
   pendingRenewals: number;
   approvedThisMonth: number;
@@ -114,6 +129,15 @@ export type HmProduct = {
   providerId?: string | null;
   category?: { id: string; name: string } | null;
   panel?: { id: string; name: string } | null;
+};
+
+type Part<T> = { ok: true; data: T } | { ok: false; error: string };
+export type HmOverview = {
+  account: Part<{ username: string; role: string; balance?: number; unlimitedTraffic?: boolean; clientCount?: number; maxClients?: number }>;
+  premium: Part<{ premium: boolean; modules: Array<{ id: string; name: string }> }>;
+  store: Part<{ title: string; enabled: boolean; storefrontUrl?: string | null }>;
+  cards: Part<HmCard[]>;
+  products: Part<HmProduct[]>;
 };
 
 export type Member = {
@@ -179,7 +203,10 @@ export const adminApi = {
   uploadLogo: (id: string, dataUrl: string) =>
     request<AdminBrand>(`/api/v1/admin/brands/${id}/logo`, { method: 'POST', token: tk(), body: json({ dataUrl }) }),
   hmpanelPanels: (id: string) =>
-    request<Array<{ id: string; name: string; host: string }>>(`/api/v1/admin/brands/${id}/hmpanel`, { token: tk() }),
+    request<Array<{ id: string; name: string; host: string; healthy: boolean | null; inBrand: boolean }>>(`/api/v1/admin/brands/${id}/hmpanel`, {
+      token: tk(),
+    }),
+  hmpanelOverview: (id: string, panelId: string) => request<HmOverview>(`/api/v1/admin/brands/${id}/hmpanel/${panelId}/overview`, { token: tk() }),
   hmpanelCards: (id: string, panelId: string) => request<HmCard[]>(`/api/v1/admin/brands/${id}/hmpanel/${panelId}/cards`, { token: tk() }),
   hmpanelProducts: (id: string, panelId: string) =>
     request<HmProduct[]>(`/api/v1/admin/brands/${id}/hmpanel/${panelId}/products`, { token: tk() }),

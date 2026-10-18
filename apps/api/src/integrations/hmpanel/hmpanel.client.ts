@@ -134,6 +134,32 @@ export class HmPanelClientService {
     return { ok: true, message: `Renewed on HMPanel${note}` };
   }
 
+  async account(cfg: HmPanelConfig) {
+    return this.request<{
+      username: string;
+      role: string;
+      status?: string;
+      balance?: number;
+      trafficMode?: string;
+      unlimitedTraffic?: boolean;
+      clientCount?: number;
+      maxClients?: number;
+      expiryTime?: number;
+    }>(cfg, 'GET', '/v1/account');
+  }
+
+  async premium(cfg: HmPanelConfig) {
+    return this.request<{ premium: boolean; modules: Array<{ id: string; name: string; canWrite?: boolean }> }>(cfg, 'GET', '/v1/premium');
+  }
+
+  async store(cfg: HmPanelConfig) {
+    return this.request<{ title: string; enabled: boolean; storefrontUrl?: string | null; defaultCurrency?: string }>(
+      cfg,
+      'GET',
+      '/v1/premium/store',
+    );
+  }
+
   // ---------- Premium store (module `store`) ----------
 
   /** Cards the admin's store and bot show for renewals (falls back to the store's general cards). */

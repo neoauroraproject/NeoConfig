@@ -46,7 +46,7 @@ export class PublicService {
   ) {}
 
   async branding(tenant?: string) {
-    return this.brands.toPublic(await this.brands.resolve(tenant));
+    return this.brands.toPublicLive(await this.brands.resolve(tenant));
   }
 
   async lookupForTenant(url: string, tenant?: string) {

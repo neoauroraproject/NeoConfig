@@ -25,6 +25,8 @@ const config: Config = {
         nav: v('nav'),
         'nav-ink': v('nav-ink'),
         'on-ink': v('on-ink'),
+        btn: v('btn'),
+        'btn-ink': v('btn-ink'),
       },
       fontFamily: {
         sans: ['Vazirmatn', 'Tahoma', 'system-ui', 'sans-serif'],

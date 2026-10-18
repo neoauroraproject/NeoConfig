@@ -48,6 +48,9 @@ class BrandDto {
   @IsOptional() @IsString() theme?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) themeChoices?: string[];
   @IsOptional() @IsObject() copy?: Record<string, string>;
+  @IsOptional() @IsObject() reminders?: Record<string, unknown>;
+  @IsOptional() @IsString() @MaxLength(16) iconBg?: string;
+  @IsOptional() @IsString() @MaxLength(9) buttonColor?: string | null;
   @IsOptional() @IsString() defaultLocale?: string;
   @IsOptional() @IsString() supportUrl?: string | null;
   @IsOptional() @IsString() supportTelegram?: string | null;
@@ -63,7 +66,7 @@ class BrandDto {
   @IsOptional() @IsString() renewalNote?: string | null;
   @IsOptional() @IsBoolean() expiryRemindersEnabled?: boolean;
   @IsOptional() @IsString() @MaxLength(200) telegramBotToken?: string;
-  @IsOptional() @IsString() @MaxLength(64) telegramChatId?: string | null;
+  @IsOptional() @IsString() @MaxLength(220) telegramChatId?: string | null;
   @IsOptional() @IsIn(['local', 'hmpanel']) renewalVia?: string;
   @IsOptional() @IsString() @MaxLength(64) renewalPanelId?: string | null;
   @IsOptional() @IsBoolean() cardFromPanel?: boolean;

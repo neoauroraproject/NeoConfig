@@ -26,7 +26,13 @@ type Snapshot = Pick<
 >;
 
 /** Which reminder thresholds an account has crossed. Disabled and not-yet-started accounts get none. */
-export function checkThresholds(s: Snapshot, now: Date): ReminderCheck {
+export function checkThresholds(
+  s: Snapshot,
+  now: Date,
+  opts: { days?: number; dataPercent?: number; lastDay?: boolean; expired?: boolean; dataOut?: boolean } = {},
+): ReminderCheck {
+  const daysBefore = opts.days ?? REMINDER_DAYS_LEFT;
+  const dataFraction = (opts.dataPercent ?? REMINDER_DATA_FRACTION * 100) / 100;
   const due: ReminderKind[] = [];
   if (s.status === 'disabled' || s.status === 'on_hold') return { due, daysLeft: null, dataLeft: null };
 
@@ -35,9 +41,10 @@ export function checkThresholds(s: Snapshot, now: Date): ReminderCheck {
   if (Number.isFinite(expiry)) {
     daysLeft = Math.max(0, Math.ceil((expiry - now.getTime()) / DAY_MS));
     const left = expiry - now.getTime();
-    if (left <= REMINDER_DAYS_LEFT * DAY_MS) due.push('days');
-    if (left <= 0) due.push('expired');
-    else if (left <= DAY_MS) due.push('days1');
+    if (daysBefore > 0 && left <= daysBefore * DAY_MS) due.push('days');
+    if (left <= 0) {
+      if (opts.expired !== false) due.push('expired');
+    } else if (left <= DAY_MS && opts.lastDay !== false) due.push('days1');
   }
 
   let dataLeft: number | null = null;
@@ -45,8 +52,8 @@ export function checkThresholds(s: Snapshot, now: Date): ReminderCheck {
     const remaining = s.remainingBytes ?? (s.totalUsedBytes != null ? s.quotaBytes - s.totalUsedBytes : null);
     if (remaining != null) {
       dataLeft = Math.max(0, Math.min(1, remaining / s.quotaBytes));
-      if (dataLeft <= REMINDER_DATA_FRACTION) due.push('data');
-      if (remaining <= 0) due.push('data_out');
+      if (dataFraction > 0 && dataLeft <= dataFraction) due.push('data');
+      if (remaining <= 0 && opts.dataOut !== false) due.push('data_out');
     }
   }
   return { due, daysLeft, dataLeft };

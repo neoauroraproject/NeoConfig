@@ -62,7 +62,7 @@ export function AppsSheet({ open, onClose, account }: { open: boolean; onClose: 
               <Download className="h-4 w-4" />
             </a>
             {app.link ? (
-              <a href={app.link(account.url, name)} className="inline-flex h-10 items-center rounded-full bg-brand px-4 text-sm font-medium text-white">
+              <a href={app.link(account.url, name)} className="inline-flex h-10 items-center rounded-full bg-btn px-4 text-sm font-medium text-btn-ink">
                 {t('addInApp')}
               </a>
             ) : (

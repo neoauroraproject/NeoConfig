@@ -21,6 +21,8 @@ export interface RenewalNotice {
 
 /** What the bot checks before a human looks at the receipt. */
 export interface ReviewInfo {
+  /** Where the account lives. */
+  panel?: { name: string; type: string } | null;
   /** The account as the panel reports it right now (null when it could not be read). */
   current?: Pick<
     NormalizedSubscription,
@@ -85,6 +87,9 @@ export function esc(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+const PANEL_LABEL: Record<string, string> = { xui: 'ثنایی (3x-ui)', pasarguard: 'پاسارگارد', hmpanel: 'HMPanel' };
+const faDateTime = (d: Date | number) =>
+  new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Tehran' }).format(d);
 const faDate = (d: Date | number) => new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium' }).format(d);
 const gbText = (bytes: number) => `${+(bytes / GB).toFixed(bytes >= 10 * GB ? 0 : 1)} گیگ`;
 
@@ -132,8 +137,11 @@ export function receiptCaption(appName: string, r: RenewalNotice): string {
     `🧾 <b>رسید تمدید</b> · ${esc(appName)}`,
     '',
     `👤 <b>${esc(r.displayName || r.subId)}</b>`,
+    v?.panel ? `🖥 ${esc(v.panel.name)} · ${PANEL_LABEL[v.panel.type] ?? v.panel.type}` : null,
+    r.subId && !r.subId.startsWith('new:') ? `🔑 <code>${esc(r.subId.slice(0, 64))}</code>` : null,
     `📦 ${esc(r.planTitle)} — <b>${esc(r.price)}</b>`,
     `⏱ ${termsLine(r)}`,
+    r.createdAt ? `🕒 ${faDateTime(r.createdAt)} · #${r.id.slice(-6)}` : null,
     r.payerName ? `💳 واریزکننده: ${esc(r.payerName)}` : null,
     r.payerNote ? `📝 ${esc(r.payerNote)}` : null,
   ];

@@ -13,7 +13,8 @@ import { describeTerms, normalizeTerms } from '../panels/renewal-terms';
 import { PrismaService } from '../prisma/prisma.service';
 import { PublicService } from '../public/public.service';
 import { PushService } from '../push/push.service';
-import { ReviewInfo, TelegramService } from '../telegram/telegram.service';
+import { fill, parseReminderSettings } from '../push/reminder-settings';
+import { ReviewInfo, SentReceipt, TelegramService } from '../telegram/telegram.service';
 
 type RenewalRow = Omit<RenewalRequest, 'receiptData'>;
 
@@ -154,7 +155,7 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
         });
         if (this.telegram.isConfigured(brand)) {
           void this.telegram
-            .say(
+            .broadcast(
               brand,
               `🧾 رسید تمدید <b>${escHtml(row.displayName || subId)}</b> · ${escHtml(plan.title)} — ${escHtml(plan.price)}\n` +
                 `در فروشگاه HMPanel ثبت شد (کد پیگیری <code>${escHtml(order.trackingCode ?? '-')}</code>). تأیید از ربات یا پنل HMPanel.`,
@@ -177,6 +178,7 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
 
     void this.review(row, found.snapshot)
       .then((review) => this.telegram.renewalReceived(brand, { ...row, review }, { mime, data }))
+      .then((refs) => this.saveTelegramRefs(row.id, refs))
       .catch(() => undefined);
     return this.toPublic(row);
   }
@@ -252,7 +254,7 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
       });
       if (this.telegram.isConfigured(brand)) {
         void this.telegram
-          .say(
+          .broadcast(
             brand,
             `🛒 <b>خرید سرویس جدید</b> · ${escHtml(plan.title)} — ${escHtml(plan.price)}${name ? `\n💳 ${escHtml(name)}` : ''}\n` +
               `در فروشگاه HMPanel ثبت شد (کد پیگیری <code>${escHtml(order.trackingCode ?? '-')}</code>). تأیید از ربات یا پنل HMPanel.`,
@@ -441,7 +443,8 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
     });
     for (const row of rows) {
       const review = await this.review(row, undefined);
-      await this.telegram.renewalReceived(brand, { ...row, review }, { mime: row.receiptMime, data: Buffer.from(row.receiptData) });
+      const refs = await this.telegram.renewalReceived(brand, { ...row, review }, { mime: row.receiptMime, data: Buffer.from(row.receiptData) });
+      await this.saveTelegramRefs(row.id, [...readRefs(row.telegramMsgs), ...refs]);
     }
     return rows.length;
   }
@@ -484,7 +487,11 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
       }),
       this.prisma.renewalRequest.count({ where: { brandId: row.brandId, subId: row.subId, status: RenewalStatus.PENDING } }),
     ]);
+    const panel = row.panelId
+      ? await this.prisma.panelConnection.findUnique({ where: { id: row.panelId }, select: { name: true, type: true } }).catch(() => null)
+      : null;
     return {
+      panel,
       current: current ?? null,
       duplicateOf: duplicate,
       approvedBefore: approved.length,
@@ -547,13 +554,14 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
         decidedById: opts.userId,
       },
     });
-    if (!opts.telegramOrigin) void this.notifyTeam(row, { approved: true, by: opts.by, appliedOnPanel, note: opts.note });
+    // Every decision (button, panel, timer, HMPanel) closes the receipt for all admins.
+    void this.notifyTeam(row, { approved: true, by: opts.by, appliedOnPanel, note: opts.note });
     const push = await this.push.notifySubscription(
       row.brandId,
       row.subId,
       row.kind === 'purchase'
         ? { title: 'سرویس جدید شما آماده است', body: `${row.planTitle} — برای افزودن به برنامه، اپ را باز کنید.`, url: `/?renewal=${row.id}`, tag: `renewal-${row.id}` }
-        : { title: 'تمدید انجام شد', body: `${row.planTitle} روی اشتراک شما فعال شد.`, url: `/?renewal=${row.id}`, tag: `renewal-${row.id}` },
+        : { ...(await this.pushText(row.brandId, 'approved', { plan: row.planTitle, name: row.displayName })), url: `/?renewal=${row.id}`, tag: `renewal-${row.id}` },
       row.deviceEndpoint,
     );
     await this.audit.log({
@@ -590,13 +598,17 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
         decidedById: opts.userId,
       },
     });
-    if (!opts.telegramOrigin) void this.notifyTeam(row, { approved: false, by: opts.by, appliedOnPanel: null, note: opts.note });
+    void this.notifyTeam(row, { approved: false, by: opts.by, appliedOnPanel: null, note: opts.note });
     const push = await this.push.notifySubscription(
       row.brandId,
       row.subId,
       {
-        title: row.kind === 'purchase' ? 'خرید شما تأیید نشد' : 'درخواست تمدید تأیید نشد',
-        body: opts.note?.trim() || 'پرداخت شما تأیید نشد. برای دیدن علت و تماس با پشتیبانی، اپ را باز کنید.',
+        ...(await this.pushText(row.brandId, 'rejected', {
+          plan: row.planTitle,
+          name: row.displayName,
+          reason: opts.note?.trim() || 'پرداخت شما تأیید نشد. برای دیدن علت و تماس با پشتیبانی، اپ را باز کنید.',
+        })),
+        ...(row.kind === 'purchase' ? { title: 'خرید شما تأیید نشد' } : {}),
         url: `/?renewal=${row.id}`,
         tag: `renewal-${row.id}`,
       },
@@ -607,13 +619,29 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
   }
 
   private async notifyTeam(
-    row: { brandId: string; displayName: string | null; subId: string; planTitle: string },
+    row: { id: string; brandId: string; displayName: string | null; subId: string; planTitle: string; price?: string },
     decision: { approved: boolean; by: string; appliedOnPanel: boolean | null; note?: string | null },
   ) {
     const brand = await this.prisma.brand.findUnique({ where: { id: row.brandId } }).catch(() => null);
-    if (brand && this.telegram.isConfigured(brand)) {
-      await this.telegram.renewalDecided(brand, row, decision).catch(() => undefined);
-    }
+    if (!brand || !this.telegram.isConfigured(brand)) return;
+    const fresh = await this.prisma.renewalRequest.findUnique({ where: { id: row.id }, select: { telegramMsgs: true } }).catch(() => null);
+    const summary = `👤 ${escHtml(row.displayName || row.subId)} · ${escHtml(row.planTitle)}${row.price ? ` — ${escHtml(row.price)}` : ''}`;
+    await this.telegram.closeReceipts(brand, readRefs(fresh?.telegramMsgs), decision, summary).catch(() => undefined);
+  }
+
+  private async saveTelegramRefs(id: string, refs: SentReceipt[]) {
+    if (!refs.length) return;
+    await this.prisma.renewalRequest.update({ where: { id }, data: { telegramMsgs: JSON.stringify(refs.slice(-20)) } }).catch(() => undefined);
+  }
+
+  /** The brand's own wording for renewal pushes (Notifications tab), with the values filled in. */
+  private async pushText(brandId: string, key: 'approved' | 'rejected', vars: Record<string, string | null>) {
+    const brand = await this.prisma.brand
+      .findUnique({ where: { id: brandId }, select: { reminderJson: true, defaultLocale: true, appName: true } })
+      .catch(() => null);
+    const t = parseReminderSettings(brand?.reminderJson, brand?.defaultLocale).texts[key];
+    const values = { app: brand?.appName ?? '', ...vars };
+    return { title: fill(t.title, values), body: fill(t.body, values) || String(vars.reason ?? '') };
   }
 
   private async storeFor(row: { panelId: string | null }) {
@@ -748,4 +776,13 @@ export function storeCannotRenew(err: unknown) {
 export function configNameFrom(name: string | null) {
   const latin = (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 16);
   return latin.length >= 3 ? latin : 'user';
+}
+
+function readRefs(json: string | null | undefined): SentReceipt[] {
+  try {
+    const v = JSON.parse(json || '[]') as SentReceipt[];
+    return Array.isArray(v) ? v.filter((r) => r && r.chatId && r.messageId) : [];
+  } catch {
+    return [];
+  }
 }

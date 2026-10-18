@@ -1,5 +1,5 @@
 /* NeoConfig service worker — static assets + web push. Never caches HTML/API. */
-const CACHE = 'neoconfig-static-v3';
+const CACHE = 'neoconfig-static-v4';
 const ASSETS = ['/offline.html', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -39,7 +39,8 @@ self.addEventListener('fetch', (event) => {
     url.pathname.startsWith('/_next/static/') ||
     url.pathname.endsWith('.woff2');
 
-  if (!staticFile) return;
+  // Dev builds reuse file names (no content hash), so caching them would show old code.
+  if (!staticFile || self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1') return;
 
   event.respondWith(
     caches.match(req).then((cached) => {

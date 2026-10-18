@@ -105,6 +105,10 @@ export type Branding = {
   theme: ThemeId;
   /** Themes the customer may pick from (default first). */
   themes?: ThemeId[];
+  /** Home-screen icon background preset. */
+  iconBg?: string;
+  /** Main buttons' color; null = the primary color. */
+  buttonColor?: string | null;
   defaultLocale: string;
   supportUrl: string | null;
   supportTelegram: string | null;

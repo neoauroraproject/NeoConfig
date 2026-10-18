@@ -1,14 +1,15 @@
 'use client';
 
-import { ArrowRight, ExternalLink, Globe, Plus, RefreshCw, Send, ShieldCheck, Trash2 } from 'lucide-react';
+import { ChevronDown, ArrowRight, ExternalLink, Globe, Plus, RefreshCw, Send, ShieldCheck, Trash2 } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { THEME_IDS, type BrandCopy, type Branding, type ThemeId } from '@/lib/api';
-import { THEME_SWATCH } from '@/lib/themes';
+import { DARK_THEMES, ICON_BACKGROUNDS, THEME_SWATCH } from '@/lib/themes';
 import { relativeTime } from '@/lib/format';
 import { AdminBrand, Member, Panel, adminApi } from './adminApi';
 import { PhonePreview } from './PhonePreview';
 import { HmPanelTab } from './HmPanelTab';
 import { PlansEditor } from './PlansEditor';
+import { RemindersCard } from './RemindersCard';
 import { Button, Card, Empty, Field, PageHeader, StatusDot, Toggle, errMsg } from './ui';
 
 const THEMES = THEME_IDS.map((id) => ({ id, label: THEME_SWATCH[id].fa, ...THEME_SWATCH[id] }));
@@ -194,7 +195,10 @@ function BrandEditor({
         accentColor: draft.accentColor,
         theme: draft.theme,
         themeChoices: draft.themeChoices ?? [],
+        iconBg: draft.iconBg ?? 'theme',
+        buttonColor: draft.buttonColor ?? null,
         copy: draft.copy ?? {},
+        reminders: draft.reminders,
         renewalVia: draft.renewalVia ?? 'local',
         renewalPanelId: draft.renewalPanelId ?? null,
         cardFromPanel: draft.cardFromPanel ?? false,
@@ -250,6 +254,8 @@ function BrandEditor({
       accentColor: draft.accentColor,
       theme: draft.theme,
       themes: [draft.theme, ...(draft.themeChoices ?? []).filter((t) => t !== draft.theme)],
+      iconBg: draft.iconBg,
+      buttonColor: draft.buttonColor,
       defaultLocale: draft.defaultLocale,
       supportUrl: draft.supportUrl,
       supportTelegram: draft.supportTelegram,
@@ -457,8 +463,23 @@ function LookTab({ draft, set, brandId, onLogo }: { draft: AdminBrand; set: SetF
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <ColorField id="b-primary" label="رنگ اصلی" hint="کاشی روزها، دکمه‌ها" value={draft.primaryColor} onChange={(v) => set('primaryColor', v)} />
           <ColorField id="b-accent" label="رنگ تأکید" hint="دکمهٔ افزودن و نمودار امروز" value={draft.accentColor} onChange={(v) => set('accentColor', v)} />
+          <div>
+            <ColorField
+              id="b-button"
+              label="رنگ دکمه‌ها"
+              hint="دکمه‌های اصلی (ادامه، ارسال رسید، افزودن…)؛ متن دکمه خودکار سفید یا تیره می‌شود"
+              value={draft.buttonColor || draft.primaryColor}
+              onChange={(v) => set('buttonColor', v)}
+            />
+            {draft.buttonColor && (
+              <button type="button" onClick={() => set('buttonColor', null)} className="mt-1 text-xs text-[var(--brand)]">
+                برگرداندن به رنگ اصلی
+              </button>
+            )}
+          </div>
         </div>
       </Card>
+      <IconBgCard draft={draft} set={set} />
       <Card>
         <h2 className="mb-4 font-medium">پشتیبانی و رفتار</h2>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -591,11 +612,17 @@ function CopyCard({ draft, set }: { draft: AdminBrand; set: SetFn }) {
       <p className="mt-1 text-xs leading-6 text-[var(--ink-3)]">
         هر فیلد خالی بماند، متن پیش‌فرض (که کم‌رنگ نوشته شده) نمایش داده می‌شود. برای عنوان صفحهٔ ورود، خط دوم را بعد از Enter بنویس. این متن‌ها برای زبان پیش‌فرض برند اعمال می‌شوند.
       </p>
-      <div className="mt-4 space-y-5">
+      <div className="mt-4 space-y-2">
         {COPY_FIELDS.map((g) => (
-          <fieldset key={g.group}>
-            <legend className="mb-2 text-[13px] font-medium text-[var(--ink-2)]">{g.group}</legend>
-            <div className="grid gap-3 sm:grid-cols-2">
+          <details key={g.group} className="group rounded-xl border border-[var(--line)] open:bg-[var(--surface-2)]">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm">
+              <span className="flex-1 font-medium">{g.group}</span>
+              <span className="text-xs text-[var(--ink-3)]">
+                {g.fields.filter((f) => copy[f.key]?.trim()).length ? `${g.fields.filter((f) => copy[f.key]?.trim()).length} تغییر` : 'پیش‌فرض'}
+              </span>
+              <ChevronDown className="h-4 w-4 text-[var(--ink-3)] transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="grid gap-3 px-3 pb-3 sm:grid-cols-2">
               {g.fields.map((f) => (
                 <label key={f.key} className={`block ${f.long ? 'sm:col-span-2' : ''}`}>
                   <span className="mb-1 block text-xs text-[var(--ink-3)]">{f.label}</span>
@@ -614,9 +641,57 @@ function CopyCard({ draft, set }: { draft: AdminBrand; set: SetFn }) {
                 </label>
               ))}
             </div>
-          </fieldset>
+          </details>
         ))}
       </div>
+    </Card>
+  );
+}
+
+/** The home-screen icon (Android & iPhone): the logo on a chosen background. */
+function IconBgCard({ draft, set }: { draft: AdminBrand; set: SetFn }) {
+  const current = draft.iconBg || 'theme';
+  return (
+    <Card>
+      <h2 className="font-medium">پس‌زمینهٔ آیکون برنامه</h2>
+      <p className="mt-1 text-xs leading-6 text-[var(--ink-3)]">
+        آیکونی که روی صفحهٔ گوشی (اندروید و آیفون) و تب مرورگر می‌نشیند. روی زمینه‌های تیره لوگوی روشن و روی روشن‌ها لوگوی تیره گذاشته می‌شود.
+      </p>
+      <div className="mt-4 grid grid-cols-4 gap-3 sm:grid-cols-6" role="radiogroup" aria-label="پس‌زمینهٔ آیکون">
+        {Object.entries(ICON_BACKGROUNDS).map(([id, bg]) => {
+          const paint = id === 'theme' ? THEME_SWATCH[draft.theme].canvas : id === 'brand' ? draft.primaryColor : bg.css;
+          const dark = id === 'theme' ? DARK_THEMES.has(draft.theme) : bg.dark;
+          const logo = dark ? draft.logoDarkUrl || draft.logoUrl : draft.logoUrl || draft.logoDarkUrl;
+          const on = current === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => set('iconBg', id)}
+              className="flex flex-col items-center gap-1.5"
+            >
+              <span
+                className={`grid h-14 w-14 place-items-center overflow-hidden rounded-[1.1rem] shadow-sm ring-offset-2 ring-offset-[var(--surface)] ${on ? 'ring-2 ring-[var(--ink)]' : 'ring-1 ring-[var(--line)]'}`}
+                style={{ background: paint }}
+              >
+                {logo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={logo} alt="" className="h-[78%] w-[78%] object-contain" />
+                ) : (
+                  <svg width="30" height="30" viewBox="0 0 40 40" aria-hidden>
+                    <circle cx="20" cy="20" r="18" fill="none" stroke={dark ? '#fff' : draft.primaryColor} strokeWidth="2.6" />
+                    <circle cx="20" cy="26.5" r="6.5" fill={dark ? '#fff' : draft.primaryColor} />
+                  </svg>
+                )}
+              </span>
+              <span className={`text-[11px] ${on ? 'font-medium text-[var(--ink)]' : 'text-[var(--ink-3)]'}`}>{bg.fa}</span>
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-3 text-[11px] text-[var(--ink-3)]">بعد از ذخیره، روی گوشی‌هایی که قبلاً نصب کرده‌اند آیکون با نصب دوباره (یا گاهی خودکار) عوض می‌شود.</p>
     </Card>
   );
 }
@@ -938,11 +1013,12 @@ function TelegramCard({ brand, onSaved }: { brand: AdminBrand; onSaved: (b: Admi
     setMsg(null);
     try {
       const r = await adminApi.telegramTest(brand.id);
+      const missed = r.errors?.length ? ` — نرسید به: ${r.errors.join('، ')}` : '';
       setMsg({
-        ok: true,
+        ok: !r.errors?.length,
         text: r.buttons
-          ? 'پیام آزمایشی ارسال شد. دکمه‌های تأیید/رد زیر رسیدها فعال است.'
-          : `پیام آزمایشی ارسال شد، ولی دکمه‌های تأیید/رد فعال نشد: ${r.buttonsMessage ?? ''}`,
+          ? `پیام آزمایشی به ${r.delivered ?? 1} ادمین رسید؛ دکمه‌های تأیید/رد فعال است.${missed}`
+          : `پیام آزمایشی رسید، ولی دکمه‌های تأیید/رد فعال نشد: ${r.buttonsMessage ?? ''}${missed}`,
       });
     } catch (e) {
       setMsg({ ok: false, text: errMsg(e) });
@@ -954,12 +1030,17 @@ function TelegramCard({ brand, onSaved }: { brand: AdminBrand; onSaved: (b: Admi
   return (
     <Card className="mb-3">
       <div className="flex items-center gap-2">
-        <h2 className="font-medium">اعلان تمدید در تلگرام</h2>
+        <h2 className="font-medium">ربات تمدید (تلگرام)</h2>
         <StatusDot ok={brand.telegramConfigured ? true : null} />
       </div>
       <p className="mt-1 text-sm leading-7 text-[var(--ink-2)]">
-        هر رسید تازه همراه تصویرش و دو دکمهٔ «تأیید و تمدید» و «رد» به این گروه فرستاده می‌شود؛ با زدن دکمه، تمدید همان‌جا انجام می‌شود. با @BotFather ربات بساز، به گروه اضافه‌اش کن و آیدی گروه را بنویس.
+        هر رسید تازه با تصویر و همهٔ جزئیات سرویس، در پیوی ربات برای ادمین‌های زیر می‌آید؛ فقط همین ادمین‌ها می‌توانند تأیید یا رد کنند.
       </p>
+      <ol className="mt-2 list-decimal space-y-1 ps-5 text-xs leading-6 text-[var(--ink-3)]">
+        <li>با @BotFather یک ربات <b>جدید</b> بساز (توکن ربات فروشگاه HMPanel را اینجا نگذار؛ هر توکن فقط به یک سرور وصل می‌شود).</li>
+        <li>هر ادمین به ربات <code dir="ltr">/start</code> بزند؛ ربات آیدی عددی‌اش را جواب می‌دهد.</li>
+        <li>آیدی‌ها را با کاما جدا اینجا بنویس، ذخیره کن و «پیام آزمایشی» را بزن.</li>
+      </ol>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <Field label="توکن ربات" htmlFor="tg-token" hint={brand.telegramConfigured ? 'ذخیره شده؛ برای تغییر، توکن جدید بنویس' : 'از @BotFather'}>
           <input
@@ -973,8 +1054,8 @@ function TelegramCard({ brand, onSaved }: { brand: AdminBrand; onSaved: (b: Admi
             placeholder={brand.telegramConfigured ? '••••••••' : '123456:ABC…'}
           />
         </Field>
-        <Field label="آیدی گروه یا کانال" htmlFor="tg-chat" hint="مثل ‎-1001234567890 یا ‎@my_channel">
-          <input id="tg-chat" dir="ltr" className="field" value={chatId} onChange={(e) => setChatId(e.target.value)} />
+        <Field label="آیدی عددی ادمین‌ها" htmlFor="tg-chat" hint="مثل ‎123456789, 987654321 — حداکثر ۱۰ نفر">
+          <input id="tg-chat" dir="ltr" className="field" value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="123456789" />
         </Field>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -1014,17 +1095,7 @@ function NotifyTab({ brand, draft, set }: { brand: AdminBrand; draft: AdminBrand
 
   return (
     <div className="space-y-3">
-      <Card>
-        <Toggle
-          id="n-remind"
-          label="یادآوری خودکار پیش از پایان اشتراک"
-          checked={draft.expiryRemindersEnabled}
-          onChange={(v) => set('expiryRemindersEnabled', v)}
-        />
-        <p className="mt-1 text-xs text-[var(--ink-2)]">
-          وقتی ۳ روز یا کمتر به پایان اشتراک مانده، یا ۱۰٪ حجم باقی است، یک‌بار به دستگاه‌های دنبال‌کننده اعلان می‌رود.
-        </p>
-      </Card>
+      <RemindersCard draft={draft} set={set} />
       <Card>
         <h2 className="font-medium">ارسال اعلان به کاربران {brand.appName}</h2>
         <p className="mt-1 text-sm text-[var(--ink-2)]">

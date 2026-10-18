@@ -234,6 +234,14 @@ export function HmPanelTab({
                 body="رسید در صفحهٔ «تمدیدها» و ربات تلگرام خود برند (تب اعلان) بررسی می‌شود؛ تمدید خودکار باز هم روی HMPanel انجام می‌شود."
               />
             </div>
+            {draft.renewalVia === 'hmpanel' && (
+              <p className={`mt-3 rounded-xl px-3 py-2 text-xs leading-6 ${draft.telegramConfigured ? 'bg-[var(--surface-2)] text-[var(--ink-2)]' : 'bg-[#fff7ec] text-[#7a4a0b]'}`}>
+                فروشگاه HMPanel فقط سرویس‌هایی را تمدید می‌کند که مال همان ادمین باشند یا از فروشگاه خریده شده باشند. بقیه خودکار در NeoConfig بررسی می‌شوند
+                {draft.telegramConfigured
+                  ? ' و در ربات NeoConfig برای ادمین‌ها می‌آیند.'
+                  : ' — ربات NeoConfig هنوز تنظیم نشده؛ در تب «اعلان» یک ربات جدا (نه ربات فروشگاه HMPanel) با آیدی ادمین‌ها وصل کن تا این رسیدها هم برسند.'}
+              </p>
+            )}
             {!hasStore && <Warn>برای حالت فروشگاه، لایسنس پرمیوم و ماژول «فروشگاه» برای این ادمین لازم است.{data.premium.ok ? '' : ` (${data.premium.error})`}</Warn>}
           </Card>
 

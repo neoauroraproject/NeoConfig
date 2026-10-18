@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og';
 import { NextRequest } from 'next/server';
 import { INTERNAL, THEME_CANVAS, fetchBrand } from '@/lib/brand-server';
-import { DARK_THEMES } from '@/lib/themes';
+import { DARK_THEMES, ICON_BACKGROUNDS } from '@/lib/themes';
 
 /** The uploaded logo as a data URL (satori needs the bytes, and the API is internal). */
 async function loadLogo(url: string): Promise<string | null> {
@@ -27,7 +27,10 @@ export async function GET(req: NextRequest) {
   const k = maskable ? 0.62 : 0.78;
   const headers = { 'Cache-Control': 'public, max-age=3600' };
 
-  const dark = DARK_THEMES.has(brand.theme);
+  const preset = ICON_BACKGROUNDS[brand.iconBg ?? 'theme'] ?? ICON_BACKGROUNDS.theme;
+  const paint = brand.iconBg === 'brand' ? brand.primaryColor : preset.css || bg;
+  const dark = brand.iconBg && brand.iconBg !== 'theme' ? preset.dark : DARK_THEMES.has(brand.theme);
+  const paintStyle = (paint.startsWith('linear') ? { backgroundImage: paint } : { backgroundColor: paint }) as React.CSSProperties;
   const logoUrl = dark ? brand.logoDarkUrl || brand.logoUrl : brand.logoUrl || brand.logoDarkUrl;
   const logo = logoUrl ? await loadLogo(logoUrl) : null;
   if (logo) {
@@ -35,7 +38,7 @@ export async function GET(req: NextRequest) {
     const fill = maskable ? 0.6 : size <= 64 ? 0.94 : 0.8;
     return new ImageResponse(
       (
-        <div style={{ width: size, height: size, background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: size, height: size, ...paintStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {/* eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text */}
           <img src={logo} width={size * fill} height={size * fill} style={{ objectFit: 'contain' }} />
         </div>
@@ -59,7 +62,7 @@ export async function GET(req: NextRequest) {
   );
   return new ImageResponse(
     (
-      <div style={{ width: size, height: size, background: bg, display: 'flex', position: 'relative' }}>
+      <div style={{ width: size, height: size, ...paintStyle, display: 'flex', position: 'relative' }}>
         {ring(1, 0)}
         {ring(0.66, 0.08)}
         {ring(0.36, 0.17, true)}

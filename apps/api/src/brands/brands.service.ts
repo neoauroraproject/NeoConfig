@@ -15,6 +15,7 @@ import { brandScope, isOrgAdmin, requireOrgAdmin } from '../common/access/scope'
 import { encryptSecret } from '../common/crypto/secret.crypto';
 import { HmPanelCard, HmPanelProduct } from '../integrations/hmpanel/hmpanel.client';
 import { PanelGatewayService } from '../panels/panel-gateway.service';
+import { compactReminderSettings, parseReminderSettings } from '../push/reminder-settings';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { SslQueueService } from './ssl-queue.service';
@@ -43,6 +44,8 @@ export interface RenewalPlan {
 export type PlanInput = Omit<RenewalPlan, 'users' | 'mode' | 'service'> & { users?: number; mode?: string; service?: string };
 
 export const THEMES = ['mist', 'graphite', 'sage', 'moss', 'pearl'] as const;
+/** App-icon backgrounds the web app knows how to draw (see apps/web/src/lib/themes.ts). */
+export const ICON_BGS = ['theme', 'white', 'black', 'brand', 'aurora', 'ocean', 'sunset', 'lime', 'pearl', 'rose', 'night', 'mint'] as const;
 
 /** Themes the customer can switch between: the brand's default first, then the extra choices. */
 export function themeList(theme: string, choices: string[] | null | undefined): string[] {
@@ -55,7 +58,7 @@ const EDITABLE = [
   'theme', 'defaultLocale', 'supportUrl', 'supportTelegram', 'contactEmail', 'allowCopyLink',
   'renewalEnabled', 'cardNumber', 'cardHolder', 'bankName', 'renewalNote', 'expiryRemindersEnabled',
   'telegramChatId', 'renewalVia', 'renewalPanelId', 'cardFromPanel', 'hmCardId', 'plansSync', 'purchaseEnabled',
-  'autoDecideMinutes', 'autoDecideAction',
+  'autoDecideMinutes', 'autoDecideAction', 'iconBg', 'buttonColor',
 ] as const;
 
 export type BrandInput = Partial<Record<(typeof EDITABLE)[number], string | boolean | number | null>> & {
@@ -67,6 +70,7 @@ export type BrandInput = Partial<Record<(typeof EDITABLE)[number], string | bool
   panelIds?: string[];
   themeChoices?: string[];
   copy?: Record<string, string>;
+  reminders?: unknown;
   /** Write-only. Empty string clears it. */
   telegramBotToken?: string;
 };
@@ -136,6 +140,8 @@ export class BrandsService {
       accentColor: b?.accentColor ?? '#FF6A1A',
       theme: b?.theme ?? 'mist',
       themes: themeList(b?.theme ?? 'mist', b?.themeChoices),
+      iconBg: b?.iconBg ?? 'theme',
+      buttonColor: b?.buttonColor ?? null,
       defaultLocale: b?.defaultLocale ?? 'fa',
       supportUrl: b?.supportUrl ?? null,
       supportTelegram: b?.supportTelegram ?? null,
@@ -232,6 +238,7 @@ export class BrandsService {
     }
 
     if (input.plans) data.plansJson = JSON.stringify(cleanPlans(input.plans));
+    if (input.reminders) data.reminderJson = compactReminderSettings(input.reminders, brand.defaultLocale);
     if (input.copy) data.copyJson = JSON.stringify(parseCopy(JSON.stringify(input.copy)));
     if (input.themeChoices) data.themeChoices = themeList('mist', input.themeChoices).filter((t) => input.themeChoices!.includes(t));
     if (admin) {
@@ -384,6 +391,8 @@ export class BrandsService {
         out[k] = Boolean(v);
       else if (k === 'theme') out[k] = THEMES.includes(v as never) ? v : 'mist';
       else if (k === 'renewalVia') out[k] = v === 'hmpanel' ? 'hmpanel' : 'local';
+      else if (k === 'iconBg') out[k] = typeof v === 'string' && ICON_BGS.includes(v as never) ? v : 'theme';
+      else if (k === 'buttonColor') out[k] = typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null;
       else if (k === 'autoDecideAction') out[k] = v === 'reject' ? 'reject' : 'approve';
       else if (k === 'autoDecideMinutes') out[k] = Math.max(0, Math.min(10_080, Math.round(Number(v) || 0)));
       else if (k === 'renewalPanelId') out[k] = typeof v === 'string' && v.trim() ? v.trim() : null;
@@ -392,7 +401,16 @@ export class BrandsService {
       } else if (k === 'appName' || k === 'shortName') {
         if (typeof v === 'string' && v.trim()) out[k] = v.trim().slice(0, 60);
       } else if (k === 'telegramChatId') {
-        out[k] = typeof v === 'string' ? v.trim().replace(/[^\-\d@A-Za-z_]/g, '').slice(0, 64) || null : null;
+        // Admins' numeric IDs, comma separated (a legacy group/channel ID or @name still works).
+        out[k] =
+          typeof v === 'string'
+            ? v
+                .split(/[\s,،]+/)
+                .map((x) => x.replace(/[^\-\d@A-Za-z_]/g, ''))
+                .filter(Boolean)
+                .slice(0, 10)
+                .join(',') || null
+            : null;
       } else if (k === 'cardNumber') {
         out[k] = typeof v === 'string' ? v.replace(/[^\d]/g, '').slice(0, 26) || null : null;
       } else {
@@ -606,14 +624,15 @@ export class BrandsService {
 
   async telegramTest(user: AuthUser, id: string) {
     const brand = await this.mustOwn(user, id);
+    let delivered: { ok: number; errors: string[] };
     try {
-      await this.telegram.test(brand);
+      delivered = await this.telegram.test(brand);
     } catch (err) {
       throw new BadRequestException(`Telegram: ${err instanceof Error ? err.message : 'failed'}`);
     }
     // Re-register so the Approve/Reject buttons work (also repairs a changed APP_URL).
     const hook = await this.telegram.registerWebhook(brand);
-    return { ok: true, buttons: hook.ok, buttonsMessage: hook.message };
+    return { ok: true, delivered: delivered.ok, errors: delivered.errors, buttons: hook.ok, buttonsMessage: hook.message };
   }
 
   private async assertSlugFree(slug: string) {
@@ -652,11 +671,14 @@ export class BrandsService {
       logoUrl: r.logoUrl,
       logoDarkUrl: r.logoDarkUrl,
       copy: parseCopy(r.copyJson),
+      reminders: parseReminderSettings(r.reminderJson, r.defaultLocale),
       iconUrl: r.iconUrl,
       primaryColor: r.primaryColor,
       accentColor: r.accentColor,
       theme: r.theme,
       themeChoices: r.themeChoices,
+      iconBg: r.iconBg,
+      buttonColor: r.buttonColor,
       renewalVia: r.renewalVia,
       renewalPanelId: r.renewalPanelId,
       cardFromPanel: r.cardFromPanel,
@@ -681,6 +703,7 @@ export class BrandsService {
       expiryRemindersEnabled: r.expiryRemindersEnabled,
       telegramChatId: r.telegramChatId,
       telegramConfigured: Boolean(r.telegramBotTokenEnc && r.telegramChatId),
+      telegramHasToken: Boolean(r.telegramBotTokenEnc),
       panelIds: r.panels.map((p) => p.id),
       owner: r.owner ?? null,
       domains: r.domains.map((d) => ({

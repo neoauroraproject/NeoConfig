@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import type { SavedAccount } from '@/lib/accounts';
 import type { Branding } from '@/lib/api';
 import { Dashboard } from '../storefront/Dashboard';
+import { Intro } from '../storefront/Intro';
 import { Onboarding } from '../storefront/Onboarding';
 import { SfContext, brandStyle, makeT } from '../storefront/context';
 import { demoHistory } from '../storefront/demo';
@@ -44,7 +45,7 @@ function sampleAccount(): SavedAccount {
 
 /** The real storefront components inside a phone frame, fed by the unsaved draft. */
 export function PhonePreview({ brand }: { brand: Branding }) {
-  const [screen, setScreen] = useState<'dash' | 'login'>('dash');
+  const [screen, setScreen] = useState<'dash' | 'login' | 'intro'>('dash');
   const account = useMemo(sampleAccount, []);
   const locale = brand.defaultLocale === 'en' ? 'en' : 'fa';
   const noop = () => undefined;
@@ -56,6 +57,7 @@ export function PhonePreview({ brand }: { brand: Branding }) {
           [
             ['dash', 'داشبورد کاربر'],
             ['login', 'صفحه ورود'],
+            ['intro', 'معرفی'],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -92,6 +94,16 @@ export function PhonePreview({ brand }: { brand: Branding }) {
                     onAccounts={noop}
                     onAdd={noop}
                     onMenu={noop}
+                  />
+                ) : screen === 'intro' ? (
+                  <Intro
+                    key={JSON.stringify(brand.copy ?? {}) + brand.theme}
+                    standalone={false}
+                    canPrompt={false}
+                    onInstall={async () => false}
+                    push="off"
+                    onEnablePush={async () => 'off'}
+                    onDone={noop}
                   />
                 ) : (
                   <Onboarding busy={false} error={null} onSubmit={noop} canInstall onInstall={noop} />

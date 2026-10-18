@@ -102,7 +102,7 @@ export function AccountsSheet({
                     className="flex min-w-0 flex-1 items-center gap-3 rounded-3xl p-2 text-start"
                     aria-current={active}
                   >
-                    <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-full ${active ? 'bg-brand text-white' : 'bg-surface-2 text-ink-2'}`}>
+                    <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-full ${active ? 'bg-btn text-btn-ink' : 'bg-surface-2 text-ink-2'}`}>
                       {active ? <Check className="h-4 w-4" /> : name.slice(0, 1).toUpperCase()}
                     </span>
                     <span className="min-w-0">
@@ -205,7 +205,7 @@ export function MenuSheet({
             <button
               type="button"
               onClick={onPushToggle}
-              className={`h-10 shrink-0 rounded-full px-4 text-sm font-medium ${push === 'on' ? 'bg-surface text-ink' : 'bg-brand text-white'}`}
+              className={`h-10 shrink-0 rounded-full px-4 text-sm font-medium ${push === 'on' ? 'bg-surface text-ink' : 'bg-btn text-btn-ink'}`}
             >
               {push === 'on' ? t('disable') : t('enable')}
             </button>
@@ -267,7 +267,7 @@ export function MenuSheet({
 
         {onBuy && (
           <button type="button" onClick={onBuy} className="flex w-full items-center gap-3 rounded-3xl bg-surface-2 p-4 text-start">
-            <span className="grid h-10 w-10 place-items-center rounded-full bg-brand text-white">
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-btn text-btn-ink">
               <ShoppingBag className="h-4 w-4" />
             </span>
             <span className="flex-1 text-sm font-medium text-ink">{t('buyNew')}</span>

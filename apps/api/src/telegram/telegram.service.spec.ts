@@ -24,18 +24,21 @@ const renewal = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('TelegramService', () => {
-  it('sends the receipt as a photo with an escaped caption and admin link', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true })));
+  it('sends the receipt as a photo to every admin, with an escaped caption and the review buttons', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ ok: true, result: { message_id: 77 } })));
     vi.stubGlobal('fetch', fetchMock);
-    const ok = await new TelegramService(config as never).renewalReceived(target, renewal, {
+    const sent = await new TelegramService(config as never).renewalReceived({ ...target, telegramChatId: '111, 222' }, renewal, {
       mime: 'image/jpeg',
       data: Buffer.from('jpeg'),
     });
-    expect(ok).toBe(true);
+    expect(sent).toEqual([
+      { chatId: '111', messageId: 77, isPhoto: true },
+      { chatId: '222', messageId: 77, isPhoto: true },
+    ]);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('https://api.telegram.org/bot123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef_12/sendPhoto');
     const form = init.body as FormData;
-    expect(form.get('chat_id')).toBe('-1001234');
+    expect(form.get('chat_id')).toBe('111');
     const caption = String(form.get('caption'));
     expect(caption).toContain('Arian &lt;Net&gt;');
     expect(caption).toContain('+30 روز');
@@ -48,20 +51,34 @@ describe('TelegramService', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: false, description: 'Bad Request' })))
       .mockRejectedValueOnce(new Error('network down'));
     vi.stubGlobal('fetch', fetchMock);
-    const ok = await new TelegramService(config as never).renewalReceived(target, renewal, {
+    const sent = await new TelegramService(config as never).renewalReceived(target, renewal, {
       mime: 'image/jpeg',
       data: Buffer.from('x'),
     });
-    expect(ok).toBe(false);
+    expect(sent).toEqual([]);
     expect(fetchMock.mock.calls[1][0]).toContain('/sendMessage');
   });
 
-  it('does nothing when the brand has no bot configured', async () => {
+  it('closes every copy of a receipt after the decision', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ ok: true, result: {} })));
+    vi.stubGlobal('fetch', fetchMock);
+    await new TelegramService(config as never).closeReceipts(
+      target,
+      [{ chatId: '111', messageId: 5, isPhoto: true }, { chatId: '222', messageId: 6, isPhoto: true }],
+      { approved: true, by: 'Sara', appliedOnPanel: true },
+      'Ali · Plan',
+    );
+    const methods = fetchMock.mock.calls.map((c) => String(c[0]).split('/').pop());
+    expect(methods).toEqual(['editMessageReplyMarkup', 'sendMessage', 'editMessageReplyMarkup', 'sendMessage']);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).text).toContain('تأیید شد');
+  });
+
+  it('does nothing when the brand has no admins configured', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const svc = new TelegramService(config as never);
-    expect(await svc.renewalReceived({ ...target, telegramChatId: null }, renewal)).toBe(false);
+    expect(await svc.renewalReceived({ ...target, telegramChatId: null }, renewal)).toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
-    await expect(svc.test({ ...target, telegramChatId: null })).rejects.toThrow(/required/);
+    await expect(svc.test({ ...target, telegramChatId: null })).rejects.toThrow();
   });
 });

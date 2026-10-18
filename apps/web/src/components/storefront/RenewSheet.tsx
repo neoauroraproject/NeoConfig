@@ -180,7 +180,7 @@ export function RenewSheet({
             type="button"
             disabled={!plan}
             onClick={() => setStep('pay')}
-            className="mt-5 h-14 w-full rounded-3xl bg-brand text-sm font-semibold text-white disabled:opacity-40"
+            className="mt-5 h-14 w-full rounded-3xl bg-btn text-sm font-semibold text-btn-ink disabled:opacity-40"
           >
             {t('next')}
           </button>
@@ -296,7 +296,7 @@ export function RenewSheet({
               type="button"
               disabled={!receipt || busy}
               onClick={send}
-              className="flex h-14 flex-1 items-center justify-center gap-2 rounded-3xl bg-brand text-sm font-semibold text-white disabled:opacity-40"
+              className="flex h-14 flex-1 items-center justify-center gap-2 rounded-3xl bg-btn text-sm font-semibold text-btn-ink disabled:opacity-40"
             >
               {busy && <Loader2 className="h-4 w-4 animate-spin" />}
               {busy ? t('sending') : t('sendReceipt')}
@@ -311,7 +311,7 @@ export function RenewSheet({
             initial={{ scale: 0.6, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ type: 'spring', damping: 14, stiffness: 220 }}
-            className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-brand text-white"
+            className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-btn text-btn-ink"
           >
             <Check className="h-9 w-9" strokeWidth={1.8} />
           </motion.span>
@@ -323,7 +323,7 @@ export function RenewSheet({
               onClick={onEnablePush}
               className="mt-5 flex w-full items-center gap-3 rounded-3xl bg-surface-2 p-4 text-start"
             >
-              <span className="grid h-10 w-10 place-items-center rounded-full bg-brand text-white">
+              <span className="grid h-10 w-10 place-items-center rounded-full bg-btn text-btn-ink">
                 <Bell className="h-4 w-4" />
               </span>
               <span className="flex-1 text-sm text-ink">{t('pushAsk')}</span>

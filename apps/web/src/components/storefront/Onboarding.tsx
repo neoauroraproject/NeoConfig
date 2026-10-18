@@ -150,7 +150,7 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
               type="submit"
               disabled={busy || !url.trim()}
               aria-label={t('showSub')}
-              className="grid h-16 w-16 shrink-0 place-items-center rounded-4xl bg-brand text-[var(--on-brand)] shadow-raise-sm transition-opacity disabled:opacity-40"
+              className="grid h-16 w-16 shrink-0 place-items-center rounded-4xl bg-btn text-btn-ink shadow-raise-sm transition-opacity disabled:opacity-40"
             >
               {busy ? <Loader2 className="h-6 w-6 animate-spin" /> : <Arrow className="h-6 w-6" strokeWidth={1.6} />}
             </button>

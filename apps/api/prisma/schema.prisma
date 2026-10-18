@@ -171,6 +171,12 @@ model Brand {
   logoDarkUrl     String?
   /// Brand's own wording for the first screen and the intro (JSON, default locale)
   copyJson        String  @default("{}")
+  /// Automatic notifications: thresholds and message texts (JSON, only what differs from the defaults)
+  reminderJson    String  @default("{}")
+  /// Home-screen icon background: theme | white | black | brand | a gradient preset
+  iconBg          String  @default("theme")
+  /// Main buttons' color (empty = the primary color)
+  buttonColor     String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -355,6 +361,8 @@ model RenewalRequest {
   receiptData    Bytes
   /// renewal | purchase (a new service bought in the app)
   kind             String    @default("renewal")
+  /// The receipt messages sent to each admin in Telegram (JSON), closed after the decision
+  telegramMsgs     String?
   /// Decided by the brand's timer, not a person
   autoDecided      Boolean   @default(false)
   autoTriedAt      DateTime?

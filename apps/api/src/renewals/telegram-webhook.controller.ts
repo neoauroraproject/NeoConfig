@@ -2,7 +2,7 @@ import { Body, Controller, Headers, HttpCode, Param, Post } from '@nestjs/common
 import { SkipThrottle } from '@nestjs/throttler';
 import { timingSafeEqual } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { decisionLine, parseCallback, TelegramService } from '../telegram/telegram.service';
+import { isReviewer, parseCallback, TelegramService } from '../telegram/telegram.service';
 import { RenewalsService } from './renewals.service';
 
 interface Chat {
@@ -23,7 +23,7 @@ interface Update {
       photo?: unknown[];
     };
   };
-  message?: { message_id: number; chat: Chat; text?: string };
+  message?: { message_id: number; chat: Chat; text?: string; from?: { id: number } };
 }
 
 /**
@@ -52,7 +52,18 @@ export class TelegramWebhookController {
     if (!brand?.telegramWebhookSecret || !secret || !safeEqual(secret, brand.telegramWebhookSecret)) return { ok: true };
 
     if (update.message?.text?.startsWith('/')) {
-      if (isTeamChat(brand.telegramChatId, update.message.chat)) await this.command(brand, update.message.text);
+      const m = update.message;
+      const cmd = m.text!.trim().split(/\s+/)[0].split('@')[0].toLowerCase();
+      if (isReviewer(brand.telegramChatId, m.from?.id, m.chat)) {
+        await this.command(brand, m.chat.id, cmd);
+      } else if (cmd === '/start' || cmd === '/id') {
+        // How an admin finds the ID to enter in NeoConfig; nothing else is shared with strangers.
+        await this.telegram.reply(
+          brand,
+          m.chat.id,
+          `آیدی عددی شما: <code>${m.from?.id ?? m.chat.id}</code>\nاین عدد را در پنل NeoConfig ← برند ← اعلان، در «آیدی ادمین‌ها» وارد کنید تا رسیدها برایتان بیاید.`,
+        );
+      }
       return { ok: true };
     }
 
@@ -61,8 +72,8 @@ export class TelegramWebhookController {
     if (!cb || !action || !cb.message) return { ok: true };
 
     const chat = cb.message.chat;
-    if (!isTeamChat(brand.telegramChatId, chat)) {
-      await this.telegram.answerCallback(brand, cb.id, 'This chat is not allowed to decide renewals');
+    if (!isReviewer(brand.telegramChatId, cb.from?.id, chat)) {
+      await this.telegram.answerCallback(brand, cb.id, 'شما اجازهٔ تأیید یا رد رسیدها را ندارید', true);
       return { ok: true };
     }
 
@@ -78,12 +89,11 @@ export class TelegramWebhookController {
         `${by} (Telegram)`,
       );
       const applied = 'appliedOnPanel' in res ? (res.appliedOnPanel as boolean | null) : null;
-      await this.telegram.markDecided(
+      await this.telegram.answerCallback(
         brand,
-        { ...message, isPhoto: Boolean(cb.message.photo), caption: escapeKept(cb.message.caption ?? cb.message.text ?? '') },
-        decisionLine({ approved: approve, by, appliedOnPanel: applied, note }),
+        cb.id,
+        !approve ? 'رد شد' : applied ? 'تأیید و روی پنل تمدید شد ✅' : 'تأیید شد ✅',
       );
-      await this.telegram.answerCallback(brand, cb.id, approve ? 'تأیید شد ✅' : 'رد شد');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed';
       // The panel refused or the account moved: keep the request open and offer a manual approval.
@@ -93,17 +103,17 @@ export class TelegramWebhookController {
     return { ok: true };
   }
 
-  private async command(brand: Parameters<TelegramService['say']>[0] & { id: string }, text: string) {
-    const cmd = text.trim().split(/\s+/)[0].split('@')[0].toLowerCase();
+  private async command(brand: Parameters<TelegramService['reply']>[0] & { id: string }, chatId: number, cmd: string) {
     if (cmd === '/pending') {
       const sent = await this.renewals.resendPending(brand.id);
-      if (!sent) await this.telegram.say(brand, '✅ درخواست در انتظاری نیست.');
+      if (!sent) await this.telegram.reply(brand, chatId, '✅ درخواست در انتظاری نیست.');
       return;
     }
     if (cmd === '/stats') {
       const s = await this.renewals.stats(brand.id);
-      await this.telegram.say(
+      await this.telegram.reply(
         brand,
+        chatId,
         [
           '📈 <b>آمار تمدید</b>',
           '',
@@ -114,17 +124,11 @@ export class TelegramWebhookController {
       );
       return;
     }
-    if (cmd === '/help' || cmd === '/start') await this.telegram.help(brand);
+    if (cmd === '/id') await this.telegram.reply(brand, chatId, `آیدی عددی شما: <code>${chatId}</code>`);
+    if (cmd === '/help' || cmd === '/start') await this.telegram.help(brand, chatId);
   }
 }
 
-function isTeamChat(configuredRaw: string | null, chat: Chat) {
-  const configured = (configuredRaw || '').trim();
-  return (
-    configured === String(chat.id) ||
-    Boolean(configured.startsWith('@') && chat.username && configured.slice(1).toLowerCase() === chat.username.toLowerCase())
-  );
-}
 
 function safeEqual(a: string, b: string) {
   const x = Buffer.from(a);
@@ -133,6 +137,6 @@ function safeEqual(a: string, b: string) {
 }
 
 /** Telegram returns captions as plain text; re-escape before sending them back as HTML. */
-function escapeKept(s: string) {
+export function escapeKept(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

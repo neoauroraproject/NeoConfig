@@ -42,6 +42,8 @@
   --on-hi: var(--on-brand);
   --sheet: var(--surface);
   --on-ink: var(--surface);
+  --btn: var(--brand);
+  --btn-ink: var(--on-brand);
   color: var(--ink);
   background: var(--canvas);
   font-family: 'Vazirmatn', Tahoma, system-ui, sans-serif;

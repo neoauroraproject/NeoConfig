@@ -130,6 +130,13 @@ function RenewalCard({ r, onDone }: { r: AdminRenewal; onDone: () => void }) {
           <p className="mt-1 text-sm text-[var(--ink-2)]">
             {r.planTitle} · <span className="font-medium text-[var(--ink)]">{r.price}</span>
           </p>
+          {pending && r.applyMessage && (
+            <p className="mt-1 rounded-lg bg-[#fff7ec] px-2.5 py-1.5 text-xs leading-6 text-[#7a4a0b]">
+              {/store/i.test(r.applyMessage)
+                ? 'فروشگاه HMPanel این سرویس را نپذیرفت (سرویس متعلق به ادمین دیگری است یا از فروشگاه خریده نشده)؛ همین‌جا یا با ربات NeoConfig بررسی کن — تمدید خودکار از طریق HMPanel انجام می‌شود.'
+                : r.applyMessage}
+            </p>
+          )}
           <p className="mt-0.5 text-xs text-[var(--ink-3)]">
             {r.days > 0 ? `${r.days} روز` : 'بدون تغییر زمان'} · {r.gb > 0 ? `${r.gb} گیگ` : 'نامحدود'}
             {r.payerName ? ` · واریزکننده: ${r.payerName}` : ''}

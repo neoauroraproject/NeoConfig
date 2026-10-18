@@ -3,6 +3,7 @@
 import { createContext, useContext } from 'react';
 import type { Branding } from '@/lib/api';
 import { DictKey, Locale, t as translate } from '@/lib/i18n';
+import { inkOn } from '@/lib/themes';
 
 export type SfContextValue = {
   brand: Branding;
@@ -27,9 +28,12 @@ export function makeT(locale: Locale) {
 }
 
 /** CSS variables a storefront wrapper needs for a brand. */
-export function brandStyle(brand: Pick<Branding, 'primaryColor' | 'accentColor'>): React.CSSProperties {
+export function brandStyle(brand: Pick<Branding, 'primaryColor' | 'accentColor'> & Partial<Pick<Branding, 'buttonColor'>>): React.CSSProperties {
+  const btn = brand.buttonColor || brand.primaryColor;
   return {
     ['--brand' as string]: brand.primaryColor,
     ['--accent' as string]: brand.accentColor,
+    ['--btn' as string]: btn,
+    ['--btn-ink' as string]: inkOn(btn),
   };
 }

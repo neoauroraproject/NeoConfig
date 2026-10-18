@@ -5,7 +5,8 @@ import { decryptSecret } from '../common/crypto/secret.crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PublicService } from '../public/public.service';
 import { PushService } from './push.service';
-import { ReminderKind, checkThresholds, planReminders, reminderText } from './reminder-rules';
+import { ReminderKind, checkThresholds, planReminders } from './reminder-rules';
+import { parseReminderSettings, reminderMessage } from './reminder-settings';
 
 /**
  * Every few hours, re-check the accounts devices follow and push one reminder
@@ -52,6 +53,7 @@ export class ExpiryRemindersService implements OnApplicationBootstrap, OnModuleD
         include: { panels: { select: { id: true } } },
       });
       for (const brand of brands) {
+        const settings = parseReminderSettings(brand.reminderJson, brand.defaultLocale);
         const follows = await this.prisma.pushFollow.findMany({
           where: { device: { brandId: brand.id } },
           orderBy: { updatedAt: 'desc' },
@@ -72,11 +74,13 @@ export class ExpiryRemindersService implements OnApplicationBootstrap, OnModuleD
         for (const [subId, urlEnc] of urls) {
           stats.checked += 1;
           let check;
+          let name = '';
           try {
             const result = await this.lookup.lookup(brand, decryptSecret(urlEnc, key));
             // The same pass fills daily usage for people who never open the app.
             await this.lookup.recordUsage(brand.id, subId, result.snapshot.totalUsedBytes);
-            check = checkThresholds(result.snapshot, now);
+            check = checkThresholds(result.snapshot, now, settings);
+            name = result.snapshot.displayName || '';
           } catch {
             // Panel down or link gone: try again next run, keep what was sent.
             stats.failed += 1;
@@ -88,7 +92,7 @@ export class ExpiryRemindersService implements OnApplicationBootstrap, OnModuleD
           }
           const claimed = await this.claim(brand.id, subId, plan.send);
           if (!claimed.length) continue;
-          const text = reminderText(claimed, check, brand.defaultLocale, brand.appName);
+          const text = reminderMessage(claimed, check, settings, { app: brand.appName, name });
           await this.push.notifySubscription(brand.id, subId, { ...text, url: '/', tag: `reminder-${subId}` });
           stats.notified += 1;
         }

@@ -68,7 +68,7 @@ export function RenewalDetailSheet({
               <button
                 type="button"
                 onClick={() => onRetry(r)}
-                className="flex h-14 items-center justify-center gap-2 rounded-3xl bg-brand text-sm font-semibold text-white"
+                className="flex h-14 items-center justify-center gap-2 rounded-3xl bg-btn text-sm font-semibold text-btn-ink"
               >
                 <RotateCw className="h-4 w-4" /> {t('sendAgain')}
               </button>

@@ -11,11 +11,14 @@ export type AdminBrand = {
   logoUrl: string | null;
   logoDarkUrl: string | null;
   copy: BrandCopy;
+  reminders: ReminderSettings;
   iconUrl: string | null;
   primaryColor: string;
   accentColor: string;
   theme: ThemeId;
   themeChoices: ThemeId[];
+  iconBg: string;
+  buttonColor: string | null;
   renewalVia: 'local' | 'hmpanel';
   renewalPanelId: string | null;
   cardFromPanel: boolean;
@@ -127,6 +130,15 @@ export type AdminRenewal = {
   decidedAt: string | null;
 };
 
+export type ReminderSettings = {
+  days: number;
+  lastDay: boolean;
+  expired: boolean;
+  dataPercent: number;
+  dataOut: boolean;
+  texts: Record<'days' | 'lastDay' | 'expired' | 'data' | 'dataOut' | 'approved' | 'rejected', { title: string; body: string }>;
+};
+
 export type HmCard = { id: string; bankName: string | null; cardNumber: string; cardHolder: string | null };
 export type HmProduct = {
   id: string;
@@ -209,7 +221,10 @@ export const adminApi = {
   checkDomain: (id: string, domainId: string) =>
     request<AdminBrand>(`/api/v1/admin/brands/${id}/domains/${domainId}/check`, { method: 'POST', token: tk() }),
   telegramTest: (id: string) =>
-    request<{ ok: boolean; buttons?: boolean; buttonsMessage?: string }>(`/api/v1/admin/brands/${id}/telegram/test`, { method: 'POST', token: tk() }),
+    request<{ ok: boolean; delivered?: number; errors?: string[]; buttons?: boolean; buttonsMessage?: string }>(`/api/v1/admin/brands/${id}/telegram/test`, {
+      method: 'POST',
+      token: tk(),
+    }),
   uploadLogo: (id: string, dataUrl: string, variant: 'light' | 'dark' = 'light') =>
     request<AdminBrand>(`/api/v1/admin/brands/${id}/logo?variant=${variant}`, { method: 'POST', token: tk(), body: json({ dataUrl }) }),
   pendingRenewals: () => request<{ count: number; latestAt: string | null }>('/api/v1/admin/renewals/pending', { token: tk() }),

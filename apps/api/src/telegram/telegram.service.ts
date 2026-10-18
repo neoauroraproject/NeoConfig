@@ -6,17 +6,40 @@ import { HELP_TEXT, Markup, RenewalNotice, decisionLine, esc, receiptCaption, re
 export interface TelegramTarget {
   appName: string;
   telegramBotTokenEnc: string | null;
+  /** Admins' numeric Telegram IDs, comma separated (a group ID still works). */
   telegramChatId: string | null;
+}
+
+/** A receipt message as sent to one admin, so every copy can be closed later. */
+export interface SentReceipt {
+  chatId: string;
+  messageId: number;
+  isPhoto: boolean;
 }
 
 export type { CallbackAction, RenewalNotice, ReviewInfo } from './review';
 export { decisionLine, esc, parseCallback } from './review';
 
+/** The brand's admins (or a legacy group) that receive receipts and may decide them. */
+export function recipients(raw: string | null | undefined): string[] {
+  return [...new Set((raw || '').split(/[\s,،]+/).map((s) => s.trim()).filter(Boolean))].slice(0, 10);
+}
+
+/** True when this Telegram user (or the chat it wrote in) is one of the brand's reviewers. */
+export function isReviewer(raw: string | null | undefined, fromId: number | undefined, chat?: { id: number; username?: string }) {
+  const list = recipients(raw);
+  if (fromId !== undefined && list.includes(String(fromId))) return true;
+  if (!chat) return false;
+  return list.some(
+    (r) => r === String(chat.id) || (r.startsWith('@') && chat.username && r.slice(1).toLowerCase() === chat.username.toLowerCase()),
+  );
+}
+
 /**
- * The sales team's Telegram channel for renewals: each receipt arrives with
- * its photo and Approve/Reject buttons (handled by TelegramWebhookController).
- * Uses the brand's own bot, so each reseller can point it at their own group.
- * TELEGRAM_API_BASE lets servers that cannot reach api.telegram.org use a relay.
+ * The brand's own renewal bot: every receipt goes, with its photo and
+ * Approve/Reject buttons, to each admin's private chat (handled by
+ * TelegramWebhookController). TELEGRAM_API_BASE lets servers that cannot
+ * reach api.telegram.org use a relay.
  */
 @Injectable()
 export class TelegramService {
@@ -25,42 +48,77 @@ export class TelegramService {
   constructor(private readonly config: ConfigService) {}
 
   isConfigured(t: TelegramTarget) {
-    return Boolean(t.telegramBotTokenEnc && t.telegramChatId);
+    return Boolean(t.telegramBotTokenEnc && recipients(t.telegramChatId).length);
   }
 
   receiptCaption(t: TelegramTarget, r: RenewalNotice) {
     return receiptCaption(t.appName, r);
   }
 
-  async renewalReceived(t: TelegramTarget, r: RenewalNotice, receipt?: { mime: string; data: Buffer }) {
+  /** Sends the receipt to every admin; returns each copy so it can be closed after the decision. */
+  async renewalReceived(t: TelegramTarget, r: RenewalNotice, receipt?: { mime: string; data: Buffer }): Promise<SentReceipt[]> {
     const text = this.receiptCaption(t, r);
     const markup = reviewKeyboard(r.id);
-    if (receipt) return this.sendPhoto(t, text, receipt, markup);
-    return this.sendMessage(t, text, false, markup);
-  }
-
-  async renewalDecided(
-    t: TelegramTarget,
-    r: Pick<RenewalNotice, 'displayName' | 'subId' | 'planTitle'>,
-    decision: { approved: boolean; by: string; appliedOnPanel: boolean | null; note?: string | null },
-  ) {
-    return this.sendMessage(
-      t,
-      `${decisionLine(decision)}\n👤 ${esc(r.displayName || r.subId)} · ${esc(r.planTitle)}${decision.note ? `\n📝 ${esc(decision.note)}` : ''}`,
-    );
-  }
-
-  async test(t: TelegramTarget) {
-    return this.sendMessage(t, `🔔 اعلان‌های تمدید <b>${esc(t.appName)}</b> به این گفتگو می‌آید.`, true);
+    const sent: SentReceipt[] = [];
+    for (const chatId of recipients(t.telegramChatId)) {
+      const ref = receipt ? await this.sendPhotoTo(t, chatId, text, receipt, markup) : await this.sendTo(t, chatId, text, markup);
+      if (ref) sent.push(ref);
+    }
+    return sent;
   }
 
   /**
-   * Points the bot's webhook at this server so button taps reach us.
+   * A decision was made (button, admin panel, timer or HMPanel): take the
+   * buttons off every admin's copy and post the outcome under it.
+   */
+  async closeReceipts(
+    t: TelegramTarget,
+    refs: SentReceipt[],
+    decision: { approved: boolean; by: string; appliedOnPanel: boolean | null; note?: string | null },
+    summary: string,
+  ) {
+    const line = `${decisionLine(decision)}\n${summary}`;
+    if (!refs.length) {
+      // Sent before receipts were tracked (or the copies are gone): say it once to each admin.
+      for (const chatId of recipients(t.telegramChatId)) await this.sendTo(t, chatId, line);
+      return;
+    }
+    for (const ref of refs) {
+      await this.api(t, 'editMessageReplyMarkup', { chat_id: ref.chatId, message_id: ref.messageId, reply_markup: { inline_keyboard: [] } });
+      await this.api(t, 'sendMessage', {
+        chat_id: ref.chatId,
+        text: line,
+        parse_mode: 'HTML',
+        reply_parameters: { message_id: ref.messageId, allow_sending_without_reply: true },
+      });
+    }
+  }
+
+  /** One message to every admin (HMPanel store notices, test). Returns how many were delivered. */
+  async broadcast(t: TelegramTarget, text: string) {
+    let ok = 0;
+    const errors: string[] = [];
+    for (const chatId of recipients(t.telegramChatId)) {
+      const res = await this.api(t, 'sendMessage', { chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true });
+      if (res.ok) ok += 1;
+      else errors.push(`${chatId}: ${friendly(res.error)}`);
+    }
+    return { ok, errors };
+  }
+
+  async test(t: TelegramTarget) {
+    const res = await this.broadcast(t, `🔔 رسیدهای تمدید <b>${esc(t.appName)}</b> برای شما اینجا می‌آید و با دکمه‌ها تأیید یا رد می‌کنید.`);
+    if (!res.ok) throw new Error(res.errors.join(' · ') || 'No admin received the message');
+    return res;
+  }
+
+  /**
+   * Points the bot's webhook at this server so button taps and commands reach us.
    * Telegram only calls HTTPS URLs; on plain-HTTP installs buttons stay inactive.
    */
   async registerWebhook(t: TelegramTarget & { id: string; telegramWebhookSecret: string | null }) {
     const app = (this.config.get<string>('APP_URL') || '').replace(/\/+$/, '');
-    if (!this.isConfigured(t) || !t.telegramWebhookSecret) return { ok: false, message: 'Telegram is not configured' };
+    if (!t.telegramBotTokenEnc || !t.telegramWebhookSecret) return { ok: false, message: 'Telegram is not configured' };
     if (!app.startsWith('https://')) return { ok: false, message: 'Buttons need the site on HTTPS (APP_URL)' };
     const res = await this.api(t, 'setWebhook', {
       url: `${app}/api/v1/telegram/webhook/${t.id}`,
@@ -72,6 +130,7 @@ export class TelegramService {
         commands: [
           { command: 'pending', description: 'درخواست‌های در انتظار' },
           { command: 'stats', description: 'آمار تمدید' },
+          { command: 'id', description: 'آیدی عددی من' },
           { command: 'help', description: 'راهنما' },
         ],
       });
@@ -83,13 +142,13 @@ export class TelegramService {
     await this.api(t, 'answerCallbackQuery', { callback_query_id: callbackId, text: text.slice(0, 190), show_alert: alert });
   }
 
-  /** Reply in the team chat (commands). */
-  async say(t: TelegramTarget, text: string) {
-    return this.sendMessage(t, text);
+  /** Reply in one chat (commands, /start). */
+  async reply(t: TelegramTarget, chatId: number | string, text: string) {
+    return Boolean(await this.sendTo(t, String(chatId), text));
   }
 
-  help(t: TelegramTarget) {
-    return this.sendMessage(t, HELP_TEXT);
+  help(t: TelegramTarget, chatId: number | string) {
+    return this.reply(t, chatId, HELP_TEXT);
   }
 
   /** The panel refused the renewal: swap in "approve, I'll renew by hand" so the request isn't stuck. */
@@ -101,49 +160,45 @@ export class TelegramService {
     });
   }
 
-  /** Replace the buttons with the outcome on the original receipt message. */
-  async markDecided(
-    t: TelegramTarget,
-    message: { chatId: number | string; messageId: number; isPhoto: boolean; caption: string },
-    line: string,
-  ) {
-    const text = `${message.caption}\n\n${line}`.slice(0, message.isPhoto ? 1024 : 4096);
-    await this.api(t, message.isPhoto ? 'editMessageCaption' : 'editMessageText', {
-      chat_id: message.chatId,
-      message_id: message.messageId,
-      parse_mode: 'HTML',
-      reply_markup: { inline_keyboard: [] },
-      ...(message.isPhoto ? { caption: text } : { text }),
-    });
-  }
-
-  private async sendMessage(t: TelegramTarget, text: string, throwOnError = false, markup?: Markup) {
+  private async sendTo(t: TelegramTarget, chatId: string, text: string, markup?: Markup): Promise<SentReceipt | null> {
     const res = await this.api(t, 'sendMessage', {
-      chat_id: t.telegramChatId,
-      text,
+      chat_id: chatId,
+      text: text.slice(0, 4096),
       parse_mode: 'HTML',
       disable_web_page_preview: true,
       ...(markup ? { reply_markup: markup } : {}),
     });
-    if (!res.ok && throwOnError) throw new Error(res.error);
-    return res.ok;
+    const id = (res.result as { message_id?: number } | undefined)?.message_id;
+    return res.ok && id ? { chatId, messageId: id, isPhoto: false } : null;
   }
 
-  private async sendPhoto(t: TelegramTarget, caption: string, receipt: { mime: string; data: Buffer }, markup?: Markup) {
+  private async sendPhotoTo(
+    t: TelegramTarget,
+    chatId: string,
+    caption: string,
+    receipt: { mime: string; data: Buffer },
+    markup?: Markup,
+  ): Promise<SentReceipt | null> {
     const form = new FormData();
-    form.append('chat_id', String(t.telegramChatId));
+    form.append('chat_id', chatId);
     form.append('caption', caption.slice(0, 1024));
     form.append('parse_mode', 'HTML');
     if (markup) form.append('reply_markup', JSON.stringify(markup));
     form.append('photo', new Blob([new Uint8Array(receipt.data)], { type: receipt.mime }), 'receipt.jpg');
     const res = await this.api(t, 'sendPhoto', form);
+    const id = (res.result as { message_id?: number } | undefined)?.message_id;
+    if (res.ok && id) return { chatId, messageId: id, isPhoto: true };
     // Fall back to text (still with buttons) if the photo upload failed.
-    return res.ok || this.sendMessage(t, caption, false, markup);
+    return this.sendTo(t, chatId, caption, markup);
   }
 
-  private async api(t: TelegramTarget, method: string, body: Record<string, unknown> | FormData): Promise<{ ok: boolean; error: string }> {
-    if (!this.isConfigured(t)) return { ok: false, error: 'Telegram bot token and chat ID are required' };
-    const token = decryptSecret(t.telegramBotTokenEnc!, this.config.getOrThrow<string>('ENCRYPTION_KEY'));
+  private async api(
+    t: TelegramTarget,
+    method: string,
+    body: Record<string, unknown> | FormData,
+  ): Promise<{ ok: boolean; error: string; result?: unknown }> {
+    if (!t.telegramBotTokenEnc) return { ok: false, error: 'Telegram bot token is required' };
+    const token = decryptSecret(t.telegramBotTokenEnc, this.config.getOrThrow<string>('ENCRYPTION_KEY'));
     const base = (this.config.get<string>('TELEGRAM_API_BASE') || 'https://api.telegram.org').replace(/\/+$/, '');
     try {
       const isForm = body instanceof FormData;
@@ -153,13 +208,21 @@ export class TelegramService {
         body: isForm ? body : JSON.stringify(body),
         signal: AbortSignal.timeout(15_000),
       });
-      const json = (await res.json().catch(() => null)) as { ok?: boolean; description?: string } | null;
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; description?: string; result?: unknown } | null;
       if (!json?.ok) throw new Error(json?.description || `Telegram HTTP ${res.status}`);
-      return { ok: true, error: '' };
+      return { ok: true, error: '', result: json.result };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(`Telegram ${method} failed: ${msg}`);
       return { ok: false, error: msg };
     }
   }
+}
+
+/** Telegram's most common refusals, in words an admin can act on. */
+function friendly(error: string) {
+  if (/chat not found|bot can't initiate|user not found/i.test(error)) return 'این ادمین هنوز به ربات /start نزده';
+  if (/blocked by the user/i.test(error)) return 'این ادمین ربات را بلاک کرده';
+  if (/unauthorized/i.test(error)) return 'توکن ربات نامعتبر است';
+  return error;
 }

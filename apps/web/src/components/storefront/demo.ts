@@ -18,6 +18,8 @@ export function demoLookup(url: string): Promise<LookupResponse> {
           online: seed % 3 !== 0,
           lastOnlineAt: new Date(Date.now() - 3 * 3600_000).toISOString(),
           renewable: true,
+          deviceLimit: seed % 2 ? 2 : 1,
+          devicesOnline: seed % 3 !== 0 ? 1 : 0,
           snapshot: {
             subscriptionId: `demo-${seed.toString(36)}`,
             displayName: seed % 2 ? 'سرویس طلایی' : 'Family plan',

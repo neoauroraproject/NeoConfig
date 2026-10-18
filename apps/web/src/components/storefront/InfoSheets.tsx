@@ -96,6 +96,10 @@ export function InfoSheet({ open, onClose, account }: { open: boolean; onClose: 
       t('lastOnline'),
       account.online ? t('onlineNow') : account.lastOnlineAt ? relativeTime(account.lastOnlineAt, locale) : s.status === 'on_hold' ? t('neverOnline') : t('unknown'),
     ],
+    ...(account.deviceLimit != null
+      ? ([[t('allowedUsers'), account.deviceLimit > 0 ? String(account.deviceLimit) : '∞', true]] as Array<[string, string, boolean]>)
+      : []),
+    ...(account.devicesOnline != null ? ([[t('devicesNow'), String(account.devicesOnline), true]] as Array<[string, string, boolean]>) : []),
     [t('expiresOn'), s.expiryKind === 'none' ? t('noExpiry') : s.expiryKind === 'known' ? formatDate(s.expiryAt, locale) : t('unknown')],
     [t('daysRemaining'), days === null ? (s.expiryKind === 'none' ? '∞' : '—') : String(Math.max(0, days)), true],
     [t('total'), quota, true],

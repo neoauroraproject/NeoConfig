@@ -37,6 +37,12 @@ export type LookupResponse = {
   online: boolean | null;
   lastOnlineAt: string | null;
   renewable: boolean;
+  /** Daily readings the server took (lookups + background checks), oldest first. */
+  history?: Array<{ d: string; used: number }>;
+  /** Allowed simultaneous devices (0 = unlimited). */
+  deviceLimit?: number | null;
+  /** Devices connected right now. */
+  devicesOnline?: number | null;
 };
 
 export type RenewalPlan = {

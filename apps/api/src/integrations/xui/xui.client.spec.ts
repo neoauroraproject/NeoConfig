@@ -110,3 +110,14 @@ describe('XuiClientService on 3x-ui 3.x (clients outside inbounds)', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('remarkFromBody', () => {
+  it('reads the first config name from base64, plain and JSON subscriptions', async () => {
+    const { remarkFromBody } = await import('./xui.client');
+    const plain = 'vless://uuid@host:443?type=tcp#Asiatech-%D8%B9%D9%84%DB%8C\ntrojan://x@h:1#Other';
+    expect(remarkFromBody(plain)).toBe('Asiatech-علی');
+    expect(remarkFromBody(Buffer.from(plain).toString('base64'))).toBe('Asiatech-علی');
+    expect(remarkFromBody(JSON.stringify([{ remarks: 'DE ali-01', outbounds: [] }]))).toBe('DE ali-01');
+    expect(remarkFromBody('<html>nope</html>')).toBeNull();
+  });
+});

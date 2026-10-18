@@ -17,6 +17,8 @@ export type SavedAccount = {
   addedAt: string;
   /** One reading of total usage per day, newest last (max 30). */
   history: Array<{ d: string; used: number }>;
+  deviceLimit?: number | null;
+  devicesOnline?: number | null;
   stale?: boolean;
 };
 
@@ -81,13 +83,26 @@ export function upsertAccount(
     lastOnlineAt: res.lastOnlineAt,
     renewable: res.renewable,
     addedAt: existing?.addedAt ?? new Date().toISOString(),
-    history: recordUsage(existing?.history ?? [], res.snapshot.totalUsedBytes),
+    history: recordUsage(mergeHistory(existing?.history ?? [], res.history ?? []), res.snapshot.totalUsedBytes),
+    deviceLimit: res.deviceLimit ?? null,
+    devicesOnline: res.devicesOnline ?? null,
     stale: false,
   };
   const accounts = existing
     ? state.accounts.map((a) => (a.id === id ? next : a))
     : [...state.accounts, next];
   return { accounts, activeId: id };
+}
+
+/** Days this device missed come from the server's readings; days it saw keep its own. */
+function mergeHistory(local: SavedAccount['history'], server: SavedAccount['history']) {
+  if (!server.length) return local;
+  const byDay = new Map(server.map((h) => [h.d, h.used]));
+  for (const h of local) byDay.set(h.d, h.used);
+  return [...byDay.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([d, used]) => ({ d, used }))
+    .slice(-30);
 }
 
 function recordUsage(history: SavedAccount['history'], used: number | null) {

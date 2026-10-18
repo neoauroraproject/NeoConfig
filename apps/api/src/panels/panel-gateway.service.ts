@@ -26,6 +26,10 @@ export interface FoundAccount {
   online: boolean | null;
   lastOnlineAt: string | null;
   renewable: boolean;
+  /** Allowed simultaneous devices (0 = unlimited), when the panel says. */
+  deviceLimit?: number | null;
+  /** Devices connected right now, when the panel can tell. */
+  devicesOnline?: number | null;
 }
 
 /** One entry point for every panel flavour, so callers never branch on type. */
@@ -80,6 +84,8 @@ export class PanelGatewayService {
           online: null,
           lastOnlineAt: null,
           renewable: true,
+          deviceLimit: typeof c.limitIp === 'number' ? c.limitIp : null,
+          devicesOnline: null,
         };
       }
       if (row.type === 'pasarguard') {
@@ -94,6 +100,8 @@ export class PanelGatewayService {
           online: m.online,
           lastOnlineAt: m.lastOnlineAt,
           renewable: true,
+          deviceLimit: m.deviceLimit ?? null,
+          devicesOnline: null,
         };
       }
       if (!subId) return null;
@@ -108,6 +116,8 @@ export class PanelGatewayService {
         online: m.online,
         lastOnlineAt: m.lastOnlineAt,
         renewable: m.renewable,
+        deviceLimit: m.deviceLimit ?? null,
+        devicesOnline: m.devicesOnline ?? null,
       };
     } catch (err) {
       this.logger.warn(`Lookup on panel ${row.name} failed: ${err instanceof Error ? err.message : err}`);

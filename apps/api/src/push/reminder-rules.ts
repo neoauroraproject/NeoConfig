@@ -1,6 +1,10 @@
 import { NormalizedSubscription } from '../integrations/xui/types';
 
-export type ReminderKind = 'days' | 'data';
+/**
+ * Each threshold is pushed once (and re-armed after a renewal):
+ * days ≤ 3 days left · days1 ≤ 1 day · expired · data ≤ 10% left · data_out nothing left.
+ */
+export type ReminderKind = 'days' | 'days1' | 'expired' | 'data' | 'data_out';
 
 export const REMINDER_DAYS_LEFT = 3;
 export const REMINDER_DATA_FRACTION = 0.1;
@@ -30,7 +34,10 @@ export function checkThresholds(s: Snapshot, now: Date): ReminderCheck {
   const expiry = s.expiryKind === 'known' && s.expiryAt ? Date.parse(s.expiryAt) : NaN;
   if (Number.isFinite(expiry)) {
     daysLeft = Math.max(0, Math.ceil((expiry - now.getTime()) / DAY_MS));
-    if (expiry - now.getTime() <= REMINDER_DAYS_LEFT * DAY_MS) due.push('days');
+    const left = expiry - now.getTime();
+    if (left <= REMINDER_DAYS_LEFT * DAY_MS) due.push('days');
+    if (left <= 0) due.push('expired');
+    else if (left <= DAY_MS) due.push('days1');
   }
 
   let dataLeft: number | null = null;
@@ -39,6 +46,7 @@ export function checkThresholds(s: Snapshot, now: Date): ReminderCheck {
     if (remaining != null) {
       dataLeft = Math.max(0, Math.min(1, remaining / s.quotaBytes));
       if (dataLeft <= REMINDER_DATA_FRACTION) due.push('data');
+      if (remaining <= 0) due.push('data_out');
     }
   }
   return { due, daysLeft, dataLeft };
@@ -57,8 +65,8 @@ export function planReminders(due: ReminderKind[], alreadySent: ReminderKind[]) 
 
 export function reminderText(kinds: ReminderKind[], check: ReminderCheck, locale: string, appName: string) {
   const en = locale === 'en';
-  const days = kinds.includes('days');
-  const data = kinds.includes('data');
+  const days = kinds.some((k) => k === 'days' || k === 'days1' || k === 'expired');
+  const data = kinds.some((k) => k === 'data' || k === 'data_out');
   const d = check.daysLeft ?? 0;
   const pct = Math.round((check.dataLeft ?? 0) * 100);
   const daysPart = en

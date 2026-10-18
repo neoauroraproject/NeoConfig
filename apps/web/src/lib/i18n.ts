@@ -116,6 +116,10 @@ const fa = {
   daysRemaining: 'روزهای باقی‌مانده',
   lastSynced: 'آخرین به‌روزرسانی اطلاعات',
   theme: 'پوسته',
+  allowedUsers: 'کاربر مجاز',
+  devicesNow: 'دستگاه متصل الان',
+  usersUnit: 'کاربر',
+  connections: 'اتصال‌ها',
   err_receiptUsed: 'این رسید قبلاً برای یک تمدید استفاده شده است.',
   err_tooManyPending: 'چند درخواست تمدید در انتظار بررسی داری؛ کمی صبر کن.',
 } as const;
@@ -238,6 +242,10 @@ const en: Record<DictKey, string> = {
   daysRemaining: 'Days left',
   lastSynced: 'Data updated',
   theme: 'Theme',
+  allowedUsers: 'Allowed users',
+  devicesNow: 'Devices online now',
+  usersUnit: 'users',
+  connections: 'Connections',
   err_receiptUsed: 'This receipt was already used for a renewal.',
   err_tooManyPending: 'You already have requests waiting for review.',
 };

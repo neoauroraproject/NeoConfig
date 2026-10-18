@@ -12,7 +12,9 @@ import {
   QrCode,
   RefreshCw,
   RotateCw,
+  MonitorSmartphone,
   Smartphone,
+  Users,
   Wifi,
 } from 'lucide-react';
 import { ReactNode } from 'react';
@@ -178,6 +180,30 @@ export function Dashboard(p: Props) {
                   : t('unknown')}
           </span>
         </div>
+        {p.account.deviceLimit != null && (
+          <div className="flex items-center gap-3 border-b border-line px-3 py-3">
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-surface-2 text-ink-2">
+              <Users className="h-4 w-4" />
+            </span>
+            <span className="flex-1 text-sm text-ink-2">{t('allowedUsers')}</span>
+            <span className="num text-sm text-ink">{p.account.deviceLimit > 0 ? p.account.deviceLimit : '∞'}</span>
+          </div>
+        )}
+        {p.account.devicesOnline != null && (
+          <div className="flex items-center gap-3 border-b border-line px-3 py-3">
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-surface-2 text-ink-2">
+              <MonitorSmartphone className="h-4 w-4" />
+            </span>
+            <span className="flex-1 text-sm text-ink-2">{t('devicesNow')}</span>
+            <span className="inline-flex items-center gap-1.5">
+              {p.account.devicesOnline > 0 && <span className="h-2 w-2 rounded-full bg-[#1fa66a]" />}
+              <span className="num text-sm text-ink">
+                {p.account.devicesOnline}
+                {p.account.deviceLimit ? <span className="text-ink-3"> / {p.account.deviceLimit}</span> : null}
+              </span>
+            </span>
+          </div>
+        )}
         <button type="button" onClick={p.onInfo} className="flex w-full items-center gap-3 rounded-3xl px-3 py-3 text-start">
           <span className="flex-1 text-sm font-medium text-ink">{t('moreInfo')}</span>
           {locale === 'fa' ? <ChevronLeft className="h-4 w-4 text-ink-3" /> : <ChevronRight className="h-4 w-4 text-ink-3" />}
@@ -276,6 +302,8 @@ export function Dashboard(p: Props) {
     const max = Math.max(...values, 1);
     const hasData = days.some((d) => d.bytes !== null && d.bytes > 0);
     const todayBytes = days[days.length - 1]?.bytes;
+    // Until two days are recorded there is nothing to draw; the connections card carries the screen.
+    if (!hasData) return null;
     return (
       <section className="mt-3 rounded-[2.25rem] bg-surface p-5 shadow-raise">
         <div className="flex items-baseline justify-between gap-3">

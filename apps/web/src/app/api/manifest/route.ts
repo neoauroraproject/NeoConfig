@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { THEME_CANVAS, fetchBrand } from '@/lib/brand-server';
+import { THEME_CANVAS, fetchBrand, iconVersion } from '@/lib/brand-server';
 
 /** Per-brand web app manifest so each storefront installs under its own name and icon. */
 export async function GET(req: NextRequest) {
@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   const bg = THEME_CANVAS[brand.theme] ?? THEME_CANVAS.mist;
   const icons = brand.iconUrl
     ? [{ src: brand.iconUrl, sizes: '512x512', type: 'image/png', purpose: 'any' }]
-    : [192, 512].map((s) => ({ src: `/api/icon?t=${q}&s=${s}`, sizes: `${s}x${s}`, type: 'image/png', purpose: 'any' }));
+    : [192, 512].map((s) => ({ src: `/api/icon?t=${q}&s=${s}${iconVersion(brand)}`, sizes: `${s}x${s}`, type: 'image/png', purpose: 'any' }));
 
   return Response.json(
     {
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
       dir: brand.defaultLocale === 'fa' ? 'rtl' : 'ltr',
       icons: [
         ...icons,
-        { src: `/api/icon?t=${q}&s=512&m=1`, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        { src: `/api/icon?t=${q}&s=512&m=1${iconVersion(brand)}`, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
       ],
     },
     { headers: { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'public, max-age=300' } },

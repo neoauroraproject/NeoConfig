@@ -21,6 +21,7 @@ import { demoHistory, demoLookup } from './demo';
 import { Dashboard } from './Dashboard';
 import { Onboarding } from './Onboarding';
 import { PullToRefresh } from './PullToRefresh';
+import { Intro } from './Intro';
 import { RenewSheet } from './RenewSheet';
 import { AccountsSheet, InstallIosSheet, MenuSheet, QrSheet } from './Sheets';
 import { AppsSheet, InfoSheet } from './InfoSheets';
@@ -50,6 +51,7 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
   const [standalone, setStandalone] = useState(true);
   const [push, setPush] = useState<PushState>('unsupported');
+  const [showIntro, setShowIntro] = useState(false);
   const [tracked, setTracked] = useState<TrackedRenewal[]>([]);
   const [renewals, setRenewals] = useState<PublicRenewal[]>([]);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -88,6 +90,15 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
     }
     void pushState().then((p) => {
       setPush(p);
+      // First visit on a phone: welcome, install guide, notification permission (once per storefront).
+      try {
+        const forced = new URLSearchParams(location.search).has('intro');
+        const seen = localStorage.getItem(`nc.intro.v1.${storeKey}`);
+        const phone = window.matchMedia('(pointer: coarse)').matches;
+        if (forced || (phone && !seen && !(isStandalone() && p === 'on'))) setShowIntro(true);
+      } catch {
+        /* storage blocked: skip the intro */
+      }
       // Devices that turned push on before reminders existed never sent their links.
       if (p === 'on' && !demo) void syncPush(tenant, followsOf(s.accounts));
     });
@@ -309,6 +320,33 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
     document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', THEME_CANVAS[theme]));
   }, [theme]);
 
+  function finishIntro() {
+    setShowIntro(false);
+    try {
+      localStorage.setItem(`nc.intro.v1.${storeKey}`, '1');
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function installFromIntro() {
+    if (!installEvt) return false;
+    await installEvt.prompt();
+    const choice = await installEvt.userChoice.catch(() => null);
+    setInstallEvt(null);
+    return choice?.outcome === 'accepted';
+  }
+
+  async function pushFromIntro(): Promise<PushState> {
+    if (demo) {
+      const p = await Notification.requestPermission();
+      return p === 'granted' ? 'on' : p === 'denied' ? 'denied' : 'off';
+    }
+    const next = await enablePush(tenant, followsOf(stateRef.current.accounts));
+    setPush(next);
+    return next;
+  }
+
   function changeTheme(next: ThemeId) {
     setTheme(next);
     try {
@@ -431,6 +469,19 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
           onTheme={changeTheme}
         />
         <InstallIosSheet open={sheet === 'install'} onClose={() => setSheet(null)} />
+
+        <AnimatePresence>
+          {showIntro && (
+            <Intro
+              standalone={standalone}
+              canPrompt={Boolean(installEvt)}
+              onInstall={installFromIntro}
+              push={push}
+              onEnablePush={pushFromIntro}
+              onDone={finishIntro}
+            />
+          )}
+        </AnimatePresence>
 
         <AnimatePresence>
           {toastMsg && (

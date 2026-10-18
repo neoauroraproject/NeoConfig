@@ -1,6 +1,6 @@
 'use client';
 
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useDragControls } from 'framer-motion';
 import { X } from 'lucide-react';
 import { ReactNode, useEffect, useRef } from 'react';
 
@@ -16,6 +16,8 @@ type Props = {
 export function Sheet({ open, onClose, title, children, closeLabel }: Props) {
   const panel = useRef<HTMLDivElement>(null);
   const opener = useRef<Element | null>(null);
+  // Dragging starts only from the grab bar / title row; anywhere else scrolls the sheet.
+  const drag = useDragControls();
 
   useEffect(() => {
     if (!open) return;
@@ -72,14 +74,22 @@ export function Sheet({ open, onClose, title, children, closeLabel }: Props) {
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 32, stiffness: 340 }}
             drag="y"
+            dragListener={false}
+            dragControls={drag}
             dragConstraints={{ top: 0, bottom: 0 }}
             dragElastic={{ top: 0, bottom: 0.6 }}
             onDragEnd={(_, info) => {
               if (info.offset.y > 120 || info.velocity.y > 600) onClose();
             }}
           >
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-sunk" />
-            <div className="mb-4 flex items-center justify-between gap-3">
+            <div
+              className="-mx-5 -mt-3 mb-1 cursor-grab touch-none px-5 pb-2 pt-3"
+              onPointerDown={(e) => drag.start(e)}
+              aria-hidden
+            >
+              <div className="mx-auto h-1 w-10 rounded-full bg-sunk" />
+            </div>
+            <div className="mb-4 flex touch-none items-center justify-between gap-3" onPointerDown={(e) => drag.start(e)}>
               <h2 className="text-lg font-semibold">{title}</h2>
               <button
                 type="button"

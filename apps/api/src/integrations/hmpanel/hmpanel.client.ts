@@ -26,6 +26,7 @@ export interface HmPanelClient {
   totalBytes: number;
   remainingBytes: number | null;
   expiryTime: number;
+  limitIp?: number | null;
   lastSyncedAt: string | null;
 }
 

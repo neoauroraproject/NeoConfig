@@ -191,11 +191,8 @@ export class XuiClientService {
           const parsed = JSON.parse(text) as unknown;
           if (parsed && typeof parsed === 'object') {
             const msg = parsed as XuiMsg<XuiSubInfoViewModel>;
-            if ('obj' in msg && msg.obj && typeof msg.obj === 'object') {
-              info = msg.obj;
-            } else {
-              info = parsed as XuiSubInfoViewModel;
-            }
+            const candidate = 'obj' in msg && msg.obj && typeof msg.obj === 'object' ? msg.obj : (parsed as XuiSubInfoViewModel);
+            info = looksLikeInfo(candidate) ? candidate : null;
           }
         } catch {
           info = null;
@@ -215,6 +212,27 @@ export class XuiClientService {
       return { info, userInfo, reachable: res.ok };
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  /**
+   * The name a client app would show: the remark of the first config in the
+   * subscription body (`vless://…#Name`, or `remarks` in a JSON subscription).
+   */
+  async fetchRemark(subscriptionUrl: string, opts?: { timeoutMs?: number; fetchImpl?: typeof fetch }): Promise<string | null> {
+    const fetchFn = opts?.fetchImpl ?? fetch;
+    try {
+      const res = await fetchFn(subscriptionUrl, {
+        method: 'GET',
+        redirect: 'manual',
+        signal: AbortSignal.timeout(opts?.timeoutMs ?? 10_000),
+        headers: { 'User-Agent': 'v2rayNG/1.9', Accept: '*/*' },
+      });
+      if (!res.ok) return null;
+      const text = (await res.text()).slice(0, 256_000);
+      return remarkFromBody(text);
+    } catch {
+      return null;
     }
   }
 
@@ -263,7 +281,29 @@ export class XuiClientService {
       const traffic = await this.getClientTraffic(cfg, matches[0].client.email).catch(() => null);
       if (traffic?.lastOnline && matches[0].stat) matches[0].stat.lastOnline = Number(traffic.lastOnline);
     }
-    return aggregateMatches(subId, matches, online);
+    const result = aggregateMatches(subId, matches, online);
+    result.deviceLimit = Math.max(0, ...matches.map((m) => Number(m.client.limitIp) || 0));
+    // Devices connected now: the panel's recent-IP log, only while the account is online.
+    if (result.online) {
+      const counts = await Promise.all(matches.map((m) => this.recentIpCount(cfg, m.client.email, source.kind)));
+      const known = counts.filter((n): n is number => n !== null);
+      result.devicesOnline = known.length ? Math.max(1, known.reduce((a, b) => a + b, 0)) : null;
+    } else if (online) {
+      result.devicesOnline = 0;
+    }
+    return result;
+  }
+
+  /** IPs the panel logged for a client (3x-ui's IP-limit log). null when unavailable. */
+  private async recentIpCount(cfg: XuiConnectionConfig, email: string, kind: 'classic' | 'v3'): Promise<number | null> {
+    const session = await this.authenticate(cfg);
+    const path =
+      kind === 'v3'
+        ? `/panel/api/clients/ips/${encodeURIComponent(email)}`
+        : `/panel/api/inbounds/clientIps/${encodeURIComponent(email)}`;
+    const res = await this.request<unknown>(cfg, 'POST', path, { session }).catch(() => null);
+    if (!res?.success) return null;
+    return countIps(res.obj);
   }
 
   /** Apply renewal terms to every client sharing the subId (see RenewalTerms). */
@@ -549,6 +589,22 @@ export interface XuiAccountMatch {
   online: boolean | null;
   lastOnlineAt: string | null;
   renewable: boolean;
+  deviceLimit?: number | null;
+  devicesOnline?: number | null;
+}
+
+/** 3x-ui returns the IP log as an array, a JSON string of one, or "No IP Record". */
+export function countIps(obj: unknown): number | null {
+  if (Array.isArray(obj)) return new Set(obj.map((x) => String(x).split(' ')[0])).size;
+  if (typeof obj === 'string') {
+    if (!obj.trim() || /no ip/i.test(obj)) return 0;
+    try {
+      return countIps(JSON.parse(obj));
+    } catch {
+      return obj.split(/[\s,]+/).filter(Boolean).length;
+    }
+  }
+  return null;
 }
 
 interface XuiInbound {
@@ -703,6 +759,50 @@ export function aggregateMatches(
     lastOnlineAt: lastOnline > 0 ? new Date(lastOnline).toISOString() : null,
     renewable: true,
   };
+}
+
+function looksLikeInfo(v: unknown): v is XuiSubInfoViewModel {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  return ['email', 'subId', 'up', 'down', 'total', 'expiryTime'].some((k) => k in o);
+}
+
+/** First readable config name in a subscription body (base64 or plain list, or JSON). */
+export function remarkFromBody(raw: string): string | null {
+  let text = raw.trim();
+  if (!text) return null;
+  if (text.startsWith('[') || text.startsWith('{')) {
+    try {
+      const j = JSON.parse(text) as unknown;
+      const first = Array.isArray(j) ? j[0] : j;
+      const r = first && typeof first === 'object' ? (first as { remarks?: unknown }).remarks : null;
+      return typeof r === 'string' && r.trim() ? tidyRemark(r) : null;
+    } catch {
+      return null;
+    }
+  }
+  if (!/:\/\//.test(text)) {
+    try {
+      text = Buffer.from(text.replace(/\s+/g, ''), 'base64').toString('utf8');
+    } catch {
+      return null;
+    }
+  }
+  for (const line of text.split(/\r?\n/)) {
+    const hash = line.indexOf('#');
+    if (!/^[a-z0-9+.-]+:\/\//i.test(line.trim()) || hash < 0) continue;
+    try {
+      const name = tidyRemark(decodeURIComponent(line.slice(hash + 1)));
+      if (name) return name;
+    } catch {
+      /* malformed escape */
+    }
+  }
+  return null;
+}
+
+function tidyRemark(s: string) {
+  return s.replace(/\s+/g, ' ').trim().slice(0, 48) || null;
 }
 
 // Re-export for consumers that import user-info parsing from the client module path

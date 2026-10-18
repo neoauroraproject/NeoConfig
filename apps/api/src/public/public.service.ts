@@ -17,8 +17,19 @@ export interface LookupResult {
   online: boolean | null;
   lastOnlineAt: string | null;
   renewable: boolean;
+  deviceLimit: number | null;
+  devicesOnline: number | null;
   /** Present only when the account was matched on a configured panel. */
   account: FoundAccount | null;
+}
+
+/** Calendar day where the customers are (daily usage is a local-day idea). */
+export function usageDay(now = new Date(), timeZone = process.env.USAGE_TIMEZONE || 'Asia/Tehran') {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  } catch {
+    return now.toISOString().slice(0, 10);
+  }
 }
 
 @Injectable()
@@ -46,8 +57,35 @@ export class PublicService {
       throw err;
     }
     this.logLookup(brand.id, true, result.snapshot.dataSource);
+    const key = result.subId ?? result.snapshot.subscriptionId;
+    await this.recordUsage(brand.id, key, result.snapshot.totalUsedBytes);
+    const history = await this.usageHistory(brand.id, key).catch(() => []);
     const { account, ...publicPart } = result;
-    return { ...publicPart, renewable: Boolean(account?.renewable && brand.renewalEnabled) };
+    return { ...publicPart, history, renewable: Boolean(account?.renewable && brand.renewalEnabled) };
+  }
+
+  /** Keep today's latest reading; called from lookups and from the reminder pass. */
+  async recordUsage(brandId: string, subId: string, usedBytes: number | null) {
+    if (usedBytes === null || !Number.isFinite(usedBytes) || usedBytes < 0 || !subId) return;
+    const day = usageDay();
+    const value = BigInt(Math.round(usedBytes));
+    await this.prisma.usageDay
+      .upsert({
+        where: { brandId_subId_day: { brandId, subId, day } },
+        create: { brandId, subId, day, usedBytes: value },
+        update: { usedBytes: value },
+      })
+      .catch(() => undefined);
+  }
+
+  async usageHistory(brandId: string, subId: string, days = 30) {
+    const rows = await this.prisma.usageDay.findMany({
+      where: { brandId, subId },
+      orderBy: { day: 'desc' },
+      take: days,
+      select: { day: true, usedBytes: true },
+    });
+    return rows.reverse().map((r) => ({ d: r.day, used: Number(r.usedBytes) }));
   }
 
   private logLookup(brandId: string, found: boolean, source: string) {
@@ -80,6 +118,8 @@ export class PublicService {
           online: found.online,
           lastOnlineAt: found.lastOnlineAt,
           renewable: found.renewable,
+          deviceLimit: found.deviceLimit ?? null,
+          devicesOnline: found.devicesOnline ?? null,
           account: found,
         };
       }
@@ -100,6 +140,8 @@ export class PublicService {
       online: fallback.online,
       lastOnlineAt: fallback.lastOnlineAt,
       renewable: false,
+      deviceLimit: null,
+      devicesOnline: null,
       account: null,
     };
   }
@@ -114,7 +156,14 @@ export class PublicService {
         : userInfo
           ? normalizeFromUserInfoHeaders(userInfo, subId ?? undefined)
           : null;
-      return snapshot ? { snapshot, online: null, lastOnlineAt: null } : null;
+      if (!snapshot) return null;
+      // Without panel access the link only knows its id; the config remark is the name people recognise.
+      const generic = !info?.email && (snapshot.displayName === 'Subscription' || snapshot.displayName === subId);
+      if (generic) {
+        const remark = await this.xui.fetchRemark(url).catch(() => null);
+        if (remark) snapshot.displayName = remark;
+      }
+      return { snapshot, online: null, lastOnlineAt: null };
     } catch {
       return null;
     }

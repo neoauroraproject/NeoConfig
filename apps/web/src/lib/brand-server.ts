@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import type { Branding } from './api';
 import { THEME_CANVAS } from './themes';
 
-const INTERNAL = process.env.API_INTERNAL_URL || 'http://localhost:4000';
+export const INTERNAL = process.env.API_INTERNAL_URL || 'http://localhost:4000';
 
 export const FALLBACK_BRAND: Branding = {
   slug: 'default',
@@ -43,12 +43,24 @@ export function brandMetadata(brand: Branding, tenant: string): Metadata {
     title: brand.appName,
     description: brand.tagline || `${brand.appName} — subscription status`,
     manifest: `/api/manifest?t=${q}`,
+    // The uploaded logo becomes the favicon and home-screen icon (drawn by /api/icon).
     icons: {
-      icon: brand.iconUrl || `/api/icon?t=${q}&s=192`,
-      apple: brand.iconUrl || `/api/icon?t=${q}&s=180`,
+      icon: brand.iconUrl
+        ? brand.iconUrl
+        : [
+            { url: `/api/icon?t=${q}&s=32${iconVersion(brand)}`, sizes: '32x32', type: 'image/png' },
+            { url: `/api/icon?t=${q}&s=192${iconVersion(brand)}`, sizes: '192x192', type: 'image/png' },
+          ],
+      apple: brand.iconUrl || `/api/icon?t=${q}&s=180${iconVersion(brand)}`,
     },
     appleWebApp: { capable: true, title: brand.shortName, statusBarStyle: 'default' },
   };
+}
+
+/** Changes whenever the logo or colors change, so browsers drop a cached favicon. */
+export function iconVersion(brand: Branding) {
+  const logo = brand.logoUrl ? /[?&]v=([^&]+)/.exec(brand.logoUrl)?.[1] ?? brand.logoUrl.length : 'r';
+  return `&v=${encodeURIComponent(`${logo}-${brand.primaryColor.slice(1)}-${brand.theme}`)}`;
 }
 
 export function brandViewport(brand: Branding): Viewport {

@@ -27,7 +27,7 @@ describe('checkThresholds', () => {
 
   it('counts an expired account as due with zero days left', () => {
     const c = checkThresholds({ ...base, status: 'expired', expiryAt: inDays(-2) }, now);
-    expect(c.due).toEqual(['days']);
+    expect(c.due).toEqual(['days', 'expired']);
     expect(c.daysLeft).toBe(0);
   });
 
@@ -43,7 +43,7 @@ describe('checkThresholds', () => {
   });
 
   it('reports both thresholds together', () => {
-    expect(checkThresholds({ ...base, expiryAt: inDays(1), remainingBytes: 0 }, now).due).toEqual(['days', 'data']);
+    expect(checkThresholds({ ...base, expiryAt: inDays(1), remainingBytes: 0 }, now).due).toEqual(['days', 'days1', 'data', 'data_out']);
   });
 
   it('ignores unlimited, unknown and missing limits', () => {

@@ -41,7 +41,7 @@ function fakePrisma(follows: Array<{ subId: string; url: string }>) {
 
 describe('ExpiryRemindersService', () => {
   let snapshot: Record<string, unknown>;
-  const lookup = { lookup: vi.fn(async () => ({ snapshot })) };
+  const lookup = { lookup: vi.fn(async () => ({ snapshot })), recordUsage: vi.fn(async () => undefined) };
   const push = { notifySubscription: vi.fn(async () => ({ sent: 1, total: 1 })) };
   const config = { get: () => undefined, getOrThrow: () => KEY };
 

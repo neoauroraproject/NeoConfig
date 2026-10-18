@@ -25,7 +25,7 @@ export class ExpiryRemindersService implements OnApplicationBootstrap, OnModuleD
   ) {}
 
   onApplicationBootstrap() {
-    const minutes = Number(this.config.get<string>('PUSH_REMINDER_INTERVAL_MINUTES') ?? 360);
+    const minutes = Number(this.config.get<string>('PUSH_REMINDER_INTERVAL_MINUTES') ?? 30);
     if (!Number.isFinite(minutes) || minutes <= 0) return;
     const every = minutes * 60_000;
     const tick = () => void this.runOnce().catch((err) => this.logger.error(`Reminder run failed: ${(err as Error).message}`));
@@ -74,6 +74,8 @@ export class ExpiryRemindersService implements OnApplicationBootstrap, OnModuleD
           let check;
           try {
             const result = await this.lookup.lookup(brand, decryptSecret(urlEnc, key));
+            // The same pass fills daily usage for people who never open the app.
+            await this.lookup.recordUsage(brand.id, subId, result.snapshot.totalUsedBytes);
             check = checkThresholds(result.snapshot, now);
           } catch {
             // Panel down or link gone: try again next run, keep what was sent.

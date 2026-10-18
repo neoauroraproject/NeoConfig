@@ -33,6 +33,7 @@ export interface PasarGuardUser {
   on_hold_expire_duration?: number | null;
   online_at?: string | null;
   note?: string | null;
+  hwid_limit?: number | null;
 }
 
 export interface PasarGuardMatch {
@@ -40,6 +41,7 @@ export interface PasarGuardMatch {
   snapshot: NormalizedSubscription;
   online: boolean | null;
   lastOnlineAt: string | null;
+  deviceLimit?: number | null;
 }
 
 /**
@@ -339,6 +341,7 @@ function toMatch(user: PasarGuardUser): PasarGuardMatch {
     snapshot: normalizePasarGuardUser(user),
     online: onlineMs ? Date.now() - onlineMs < 3 * 60_000 : null,
     lastOnlineAt: onlineMs ? new Date(onlineMs).toISOString() : null,
+    deviceLimit: typeof user.hwid_limit === 'number' ? user.hwid_limit : null,
   };
 }
 

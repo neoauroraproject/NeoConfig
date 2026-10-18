@@ -423,3 +423,17 @@ model AppSetting {
   value     String
   updatedAt DateTime @updatedAt
 }
+
+/// One reading of a subscription's total usage per (Tehran) day, taken on every
+/// lookup and every reminder pass, so daily usage exists even when the app stays closed.
+model UsageDay {
+  id        String   @id @default(cuid())
+  brandId   String
+  subId     String
+  day       String
+  usedBytes BigInt
+  updatedAt DateTime @updatedAt
+
+  @@unique([brandId, subId, day])
+  @@index([brandId, subId])
+}

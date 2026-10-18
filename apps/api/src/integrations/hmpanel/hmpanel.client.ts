@@ -177,6 +177,23 @@ export class HmPanelClientService {
     return Array.isArray(r) ? r : r.data ?? [];
   }
 
+  async storeCategories(cfg: HmPanelConfig) {
+    const r = await this.request<{ data?: Array<{ id: string; name: string; enabled?: boolean; visible?: boolean }> } | Array<{ id: string; name: string }>>(
+      cfg,
+      'GET',
+      '/v1/premium/store/categories',
+    );
+    return Array.isArray(r) ? r : r.data ?? [];
+  }
+
+  /** Store orders whose config name matches (tracking code or config name search). */
+  async storeOrders(cfg: HmPanelConfig, search: string) {
+    const r = await this.request<{
+      data?: Array<{ id: string; status: string; product?: { id: string } | null; client?: { id: string; email: string } | null; createdAt: string }>;
+    }>(cfg, 'GET', `/v1/premium/store/orders?limit=50&search=${encodeURIComponent(search)}`);
+    return r.data ?? [];
+  }
+
   /** Storefront checkout on the admin's own store: HMPanel's bot and panel then review it. */
   async createOrder(
     cfg: HmPanelConfig,

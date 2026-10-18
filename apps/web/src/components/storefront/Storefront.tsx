@@ -124,6 +124,17 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
     window.addEventListener('appinstalled', onInstalled);
     // Silent refresh of every saved account.
     if (s.accounts.length) void refreshAll(s);
+    // Demo only: ?sample=1 opens straight on a filled-in dashboard (screenshots, sales demos).
+    if (demo && !s.accounts.length && new URLSearchParams(location.search).has('sample')) {
+      const url = 'https://demo.neoconfig.app/sub/aria-2026';
+      void demoLookup(url).then((res) => {
+        const next = upsertAccount(s, url, { ...res, snapshot: { ...res.snapshot, displayName: 'Aria · Germany' } });
+        persist({
+          ...next,
+          accounts: next.accounts.map((a) => ({ ...a, label: 'Aria · Germany', history: demoHistory(res.snapshot.totalUsedBytes ?? 0) })),
+        });
+      });
+    }
     return () => {
       window.removeEventListener('beforeinstallprompt', onBip);
       window.removeEventListener('appinstalled', onInstalled);
@@ -490,6 +501,7 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
               onClose={() => setSheet(null)}
               subUrl={active.url}
               serviceKind={active.serviceKind}
+              storeCategoryId={active.storeCategoryId}
               push={push}
               onEnablePush={togglePush}
               onSubmitted={(r) => trackNew(r, active.id)}

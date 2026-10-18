@@ -21,8 +21,10 @@ export function RenewSheet({
   push,
   onEnablePush,
   serviceKind,
+  storeCategoryId,
   mode = 'renew',
 }: {
+  storeCategoryId?: string | null;
   open: boolean;
   onClose: () => void;
   /** renew: extend this subscription. purchase: buy a new one (HMPanel store plans only). */
@@ -47,7 +49,11 @@ export function RenewSheet({
   // Plans for this kind of service only (a 3x-ui plan cannot renew a PasarGuard user).
   const purchase = mode === 'purchase';
   const plans = (renewal?.plans ?? []).filter((p) =>
-    purchase ? Boolean(p.productId) : !p.service || !serviceKind || p.service === serviceKind,
+    purchase
+      ? Boolean(p.productId)
+      : (!p.service || !serviceKind || p.service === serviceKind) &&
+        // A store-sold service renews only inside its own store category.
+        (!storeCategoryId || !p.categoryId || p.categoryId === storeCategoryId),
   );
   // Tabs: the plan's category, or its service type when it has none.
   const groupOf = (p: RenewalPlan) => p.category || (p.service === 'xui' ? 'V2Ray / Xray' : p.service === 'pasarguard' ? 'PasarGuard' : null);
@@ -102,6 +108,8 @@ export function RenewSheet({
             ? t('err_receiptUsed')
             : /waiting for review/i.test(msg)
               ? t('err_tooManyPending')
+              : /different store category/i.test(msg)
+                ? t('err_category')
               : msg || t('err_generic'),
       );
     } finally {

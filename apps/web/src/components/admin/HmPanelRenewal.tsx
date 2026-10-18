@@ -100,6 +100,7 @@ export function HmPanelRenewal({ draft, set }: { draft: AdminBrand; set: SetFn }
         productId: p.id,
         ...(service ? { service } : {}),
         ...(p.category?.name ? { category: p.category.name.slice(0, 40) } : prev?.category ? { category: prev.category } : {}),
+          ...(p.category?.id ? { categoryId: p.category.id } : {}),
       };
     });
     const manual = draft.plans.filter((p) => !p.productId);
@@ -254,7 +255,9 @@ export function ProductPicker({
   onImport: () => void;
   onCancel: () => void;
 }) {
-  const visible = products.filter((p) => kind === 'all' || productService(p) === kind);
+  const [cat, setCat] = useState<string>('all');
+  const cats = [...new Map(products.filter((p) => p.category).map((p) => [p.category!.id, p.category!.name])).entries()];
+  const visible = products.filter((p) => (kind === 'all' || productService(p) === kind) && (cat === 'all' || p.category?.id === cat));
   const groups = new Map<string, HmProduct[]>();
   for (const p of visible) {
     const key = p.category?.name || 'بدون دسته';
@@ -282,6 +285,21 @@ export function ProductPicker({
         ))}
         <span className="ms-auto text-xs text-[var(--ink-3)]">{fa(picked.size)} انتخاب‌شده (حداکثر ۱۲)</span>
       </div>
+      {cats.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {[['all', 'همهٔ دسته‌ها'] as [string, string], ...cats].map(([id, name]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setCat(id)}
+              aria-pressed={cat === id}
+              className={`h-8 rounded-full px-3 text-xs ${cat === id ? 'bg-[var(--brand)] text-white' : 'border border-[var(--line)] text-[var(--ink-2)]'}`}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="max-h-80 space-y-3 overflow-y-auto">
         {[...groups.entries()].map(([cat, items]) => (
           <div key={cat}>

@@ -4,6 +4,8 @@ const API = process.env.API_INTERNAL_URL || 'http://localhost:4000';
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // No dev badge in screenshots and previews.
+  devIndicators: false,
   output: 'standalone',
   async rewrites() {
     return [

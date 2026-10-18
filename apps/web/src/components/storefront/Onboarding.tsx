@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { ArrowUpLeft, ArrowUpRight, ClipboardPaste, Download, Loader2, ShoppingBag } from 'lucide-react';
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { BrandMark } from './BrandMark';
 import { useSf } from './context';
 
@@ -20,13 +20,16 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
   const { brand, t, locale } = useSf();
   const [url, setUrl] = useState('');
   const [canPaste, setCanPaste] = useState(false);
+  const [pasteHint, setPasteHint] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
   const Arrow = locale === 'fa' ? ArrowUpLeft : ArrowUpRight;
   const graphite = brand.theme === 'graphite';
   // The brand's own wording applies in its default language.
   const own = locale === (brand.defaultLocale === 'en' ? 'en' : 'fa') ? brand.copy ?? {} : {};
 
+  // The button is always there: it either reads the clipboard or opens the phone's own paste.
   useEffect(() => {
-    setCanPaste(typeof navigator !== 'undefined' && Boolean(navigator.clipboard?.readText));
+    setCanPaste(typeof navigator !== 'undefined');
   }, []);
 
   function submit(e: FormEvent) {
@@ -34,15 +37,27 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
     if (url.trim() && !busy) onSubmit(url.trim());
   }
 
+  function take(text: string) {
+    const clean = text.trim();
+    if (!clean) return;
+    setUrl(clean);
+    setPasteHint(false);
+    if (/^https?:\/\//i.test(clean) && !busy) onSubmit(clean);
+  }
+
+  /**
+   * iPhone shows its own «Paste» bubble for clipboard reads; Android may ask
+   * for permission or refuse. When reading isn't allowed, focus the field so
+   * the keyboard's paste (or a long-press → Paste) does it natively.
+   */
   async function paste() {
+    inputRef.current?.focus();
     try {
-      const text = (await navigator.clipboard.readText()).trim();
-      if (text) {
-        setUrl(text);
-        if (/^https?:\/\//i.test(text)) onSubmit(text);
-      }
+      const state = await navigator.permissions?.query({ name: 'clipboard-read' as PermissionName }).catch(() => null);
+      if (state?.state === 'denied' || !navigator.clipboard?.readText) throw new Error('blocked');
+      take(await navigator.clipboard.readText());
     } catch {
-      /* permission denied — the field still accepts a manual paste */
+      setPasteHint(true);
     }
   }
 
@@ -103,8 +118,17 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
                 autoComplete="off"
                 autoCorrect="off"
                 spellCheck={false}
+                ref={inputRef}
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
+                onPaste={(e) => {
+                  // A native paste (keyboard or long-press) goes straight to the lookup.
+                  const text = e.clipboardData.getData('text');
+                  if (/^https?:\/\//i.test(text.trim())) {
+                    e.preventDefault();
+                    take(text);
+                  }
+                }}
                 placeholder="https://"
                 aria-describedby="sub-url-hint sub-url-error"
                 aria-invalid={Boolean(error)}
@@ -131,8 +155,8 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
               {busy ? <Loader2 className="h-6 w-6 animate-spin" /> : <Arrow className="h-6 w-6" strokeWidth={1.6} />}
             </button>
           </div>
-          <p id="sub-url-hint" className="mt-2 text-xs text-ink-3">
-            {busy ? t('checking') : t('linkHint')}
+          <p id="sub-url-hint" className={`mt-2 text-xs ${pasteHint && !busy ? 'text-brand' : 'text-ink-3'}`}>
+            {busy ? t('checking') : pasteHint ? t('pasteHint') : t('linkHint')}
           </p>
           <p id="sub-url-error" role="alert" className="min-h-[1.5rem] text-[13px] text-[#d4373f]">
             {error}

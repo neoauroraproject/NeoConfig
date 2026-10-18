@@ -33,6 +33,8 @@ export interface FoundAccount {
   /** Devices registered under an HWID limit (exact). */
   devicesRegistered?: number | null;
   deviceMode?: 'hwid' | 'ip' | null;
+  /** HMPanel client email (its config name), used to find the store category it is locked to. */
+  clientEmail?: string | null;
   /** Which kind of service this is, so renewal plans can be matched to it. */
   serviceKind?: 'xui' | 'pasarguard' | null;
 }
@@ -92,6 +94,7 @@ export class PanelGatewayService {
           deviceLimit: typeof c.limitIp === 'number' ? c.limitIp : null,
           devicesOnline: null,
           serviceKind: hmServiceKind(c),
+          clientEmail: c.email,
         };
       }
       if (row.type === 'pasarguard') {
@@ -146,6 +149,8 @@ export class PanelGatewayService {
       premium: () => hm.premium(cfg),
       store: () => hm.store(cfg),
       cards: () => hm.paymentCards(cfg),
+      categories: () => hm.storeCategories(cfg),
+      orders: (search: string) => hm.storeOrders(cfg, search),
       products: () => hm.storeProducts(cfg),
       createOrder: (body: Parameters<HmPanelClientService['createOrder']>[1]) => hm.createOrder(cfg, body),
       order: (id: string) => hm.getOrder(cfg, id),

@@ -147,6 +147,7 @@ export type HmOverview = {
   store: Part<{ title: string; enabled: boolean; storefrontUrl?: string | null }>;
   cards: Part<HmCard[]>;
   products: Part<HmProduct[]>;
+  categories?: Part<Array<{ id: string; name: string; enabled?: boolean; visible?: boolean }>>;
 };
 
 export type Member = {

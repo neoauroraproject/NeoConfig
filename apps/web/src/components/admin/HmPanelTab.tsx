@@ -108,6 +108,7 @@ export function HmPanelTab({
           productId: p.id,
           ...(service ? { service } : {}),
           ...(p.category?.name ? { category: p.category.name.slice(0, 40) } : prev?.category ? { category: prev.category } : {}),
+          ...(p.category?.id ? { categoryId: p.category.id } : {}),
         };
       });
     set('plans', [...fromStore, ...draft.plans.filter((p) => !p.productId)].slice(0, 12));
@@ -278,6 +279,36 @@ export function HmPanelTab({
                 })}
               </div>
             )}
+          </Card>
+
+          {/* store categories */}
+          <Card>
+            <Head icon={<Package className="h-5 w-5" />} title="دسته‌بندی‌های فروشگاه" sub="هر سرویس فروشگاهی فقط با پلن‌های دسته‌بندی خودش تمدید می‌شود" />
+            {data.categories?.ok ? (
+              data.categories.data.length ? (
+                <ul className="mt-3 flex flex-wrap gap-2">
+                  {data.categories.data.map((c) => {
+                    const count = storeProducts.filter((p) => p.category?.id === c.id).length;
+                    const plans = linked.filter((p) => p.categoryId === c.id).length;
+                    return (
+                      <li key={c.id} className="rounded-2xl border border-[var(--line)] px-3 py-2 text-sm">
+                        <span className="font-medium">{c.name}</span>
+                        <span className="ms-2 text-xs text-[var(--ink-3)]">
+                          {fa(count)} محصول · {fa(plans)} پلن
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="mt-3 text-sm text-[var(--ink-3)]">در فروشگاه دسته‌بندی‌ای تعریف نشده.</p>
+              )
+            ) : (
+              <Warn>{data.categories && !data.categories.ok ? data.categories.error : ''}</Warn>
+            )}
+            <p className="mt-3 text-xs leading-6 text-[var(--ink-3)]">
+              سرویسی که از فروشگاه خریده شده (از ربات HMPanel یا خرید داخل اپ)، به دسته‌بندی همان محصول قفل است. اپ کاربر برای تمدیدش فقط پلن‌های همان دسته را نشان می‌دهد و NeoConfig هم پلن ناسازگار را قبول نمی‌کند. خرید جدید از داخل اپ هم با محصول همان دسته در فروشگاه ثبت می‌شود و سرویس ساخته‌شده به آن دسته وصل می‌ماند.
+            </p>
           </Card>
 
           {/* plans */}

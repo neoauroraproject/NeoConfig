@@ -28,6 +28,7 @@ class PlanDto {
   @IsOptional() @IsIn(['add', 'reset']) mode?: string;
   @IsOptional() @IsString() @MaxLength(64) productId?: string;
   @IsOptional() @IsIn(['xui', 'pasarguard']) service?: string;
+  @IsOptional() @IsString() @MaxLength(64) categoryId?: string;
   @IsOptional() @IsString() @MaxLength(40) category?: string;
 }
 

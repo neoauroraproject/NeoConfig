@@ -63,8 +63,14 @@ export class PublicService {
     const key = result.subId ?? result.snapshot.subscriptionId;
     await this.recordUsage(brand.id, key, result.snapshot.totalUsedBytes);
     const history = await this.usageHistory(brand.id, key).catch(() => []);
-    const { account, ...publicPart } = result;
-    return { ...publicPart, history, renewable: Boolean(account?.renewable && brand.renewalEnabled) };
+    const account = result.account;
+    // HMPanel store services renew only with plans from their own store category.
+    const storeCategoryId =
+      brand.renewalPanelId && account?.panelId === brand.renewalPanelId && account.panelType === 'hmpanel'
+        ? await this.brands.serviceCategory(brand.renewalPanelId, account.clientRef, account.clientEmail).catch(() => null)
+        : null;
+    const { account: _account, ...publicPart } = result;
+    return { ...publicPart, history, storeCategoryId, renewable: Boolean(account?.renewable && brand.renewalEnabled) };
   }
 
   /** Keep today's latest reading; called from lookups and from the reminder pass. */

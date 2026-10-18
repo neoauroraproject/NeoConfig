@@ -1,0 +1,65 @@
+<!doctype html>
+<!-- Source of docs/screenshots/hero.jpg — rendered by scripts/screenshots.mjs (SHOT_ONLY=hero). -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  @font-face { font-family: 'Unbounded'; src: url('../apps/web/public/fonts/Unbounded-400.woff2') format('woff2'); font-weight: 400; }
+  @font-face { font-family: 'Unbounded'; src: url('../apps/web/public/fonts/Unbounded-300.woff2') format('woff2'); font-weight: 300; }
+  @font-face { font-family: 'Vazirmatn'; src: url('../apps/web/public/fonts/Vazirmatn-Medium.woff2') format('woff2'); font-weight: 500; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 2400px; height: 1260px; }
+  body {
+    overflow: hidden;
+    background:
+      radial-gradient(900px 520px at 12% 18%, rgba(79, 91, 213, 0.45), transparent 70%),
+      radial-gradient(800px 520px at 88% 85%, rgba(215, 245, 158, 0.28), transparent 70%),
+      radial-gradient(700px 480px at 60% 10%, rgba(255, 106, 26, 0.22), transparent 70%),
+      #0b0b0f;
+    color: #fff;
+    font-family: 'Unbounded', system-ui, sans-serif;
+  }
+  .head { position: absolute; top: 84px; left: 0; right: 0; text-align: center; }
+  .brand { display: inline-flex; align-items: center; gap: 22px; font-size: 64px; font-weight: 400; letter-spacing: -0.02em; }
+  .tag { margin-top: 18px; font-size: 26px; font-weight: 300; color: rgba(255, 255, 255, 0.66); letter-spacing: 0.01em; }
+  .row { position: absolute; left: 0; right: 0; bottom: -70px; display: flex; justify-content: center; align-items: flex-end; gap: 46px; }
+  .phone {
+    width: 380px; height: 822px; border-radius: 64px; padding: 14px;
+    background: linear-gradient(160deg, #3a3b42, #121317 40%, #26272d);
+    box-shadow: 0 60px 120px -40px rgba(0, 0, 0, 0.9), 0 0 0 2px rgba(255, 255, 255, 0.06) inset;
+    position: relative;
+  }
+  .phone img { width: 100%; height: 100%; object-fit: cover; object-position: top; border-radius: 52px; display: block; }
+  .phone::after {
+    content: ''; position: absolute; top: 30px; left: 50%; width: 110px; height: 32px; margin-left: -55px;
+    background: #000; border-radius: 20px;
+  }
+  .phone.mid { transform: translateY(-70px); }
+  .phone.edge { transform: translateY(40px); }
+  .label {
+    position: absolute; bottom: 104px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+    font: 500 20px 'Vazirmatn', sans-serif; color: rgba(255, 255, 255, 0.0);
+  }
+</style>
+</head>
+<body>
+  <div class="head">
+    <div class="brand">
+      <svg width="64" height="64" viewBox="0 0 40 40" aria-hidden="true">
+        <circle cx="20" cy="20" r="18" fill="none" stroke="#7d87ff" stroke-width="2.2" />
+        <circle cx="20" cy="23" r="12" fill="none" stroke="#7d87ff" stroke-width="2.2" />
+        <circle cx="20" cy="26.5" r="6.5" fill="#7d87ff" />
+      </svg>
+      NeoConfig
+    </div>
+    <p class="tag">White-label VPN subscription app · 3x-ui · PasarGuard · HMPanel</p>
+  </div>
+  <div class="row">
+    <div class="phone edge"><img src="screenshots/phone-mist.jpg" alt="" /></div>
+    <div class="phone"><img src="screenshots/phone-graphite.jpg" alt="" /></div>
+    <div class="phone mid"><img src="screenshots/phone-pearl.jpg" alt="" /></div>
+    <div class="phone"><img src="screenshots/phone-moss.jpg" alt="" /></div>
+    <div class="phone edge"><img src="screenshots/phone-sage.jpg" alt="" /></div>
+  </div>
+</body>
+</html>

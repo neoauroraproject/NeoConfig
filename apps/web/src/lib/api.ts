@@ -47,6 +47,8 @@ export type LookupResponse = {
   devicesRegistered?: number | null;
   deviceMode?: 'hwid' | 'ip' | null;
   serviceKind?: 'xui' | 'pasarguard' | null;
+  /** HMPanel store category this service is locked to (null = any plan). */
+  storeCategoryId?: string | null;
 };
 
 export type RenewalPlan = {
@@ -62,6 +64,8 @@ export type RenewalPlan = {
   productId?: string;
   /** Only for 3x-ui or PasarGuard services; missing = any. */
   service?: 'xui' | 'pasarguard';
+  /** HMPanel store category; a store-sold service renews only within its category. */
+  categoryId?: string;
   category?: string;
 };
 

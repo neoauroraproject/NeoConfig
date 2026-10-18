@@ -31,6 +31,8 @@ export interface RenewalPlan {
   mode: 'add' | 'reset';
   /** HMPanel store product this plan orders when the brand renews through HMPanel. */
   productId?: string;
+  /** HMPanel store category of that product (a service renews only within its category). */
+  categoryId?: string;
   /** Only for this kind of service (3x-ui / PasarGuard); missing = any. */
   service?: 'xui' | 'pasarguard';
   /** Group shown as a tab in the renewal sheet. */
@@ -488,14 +490,15 @@ export class BrandsService {
         return { ok: false as const, error: hmError(err) };
       }
     };
-    const [account, premium, shop, cards, products] = await Promise.all([
+    const [account, premium, shop, cards, products, categories] = await Promise.all([
       part(store.account),
       part(store.premium),
       part(store.store),
       part(store.cards),
       part(async () => (await store.products()).filter((p) => p.renewable && p.status === 'active' && !p.isTest)),
+      part(store.categories),
     ]);
-    return { account, premium, store: shop, cards, products };
+    return { account, premium, store: shop, cards, products, categories };
   }
 
   // ---------- live HMPanel data for the storefront ----------
@@ -513,6 +516,38 @@ export class BrandsService {
     const entry = { at: Date.now(), cards: cards ?? hit?.cards ?? null, products: products ?? hit?.products ?? null };
     this.live.set(panelId, entry);
     return entry;
+  }
+
+  private categoryCache = new Map<string, { at: number; categoryId: string | null }>();
+
+  /**
+   * The store category an HMPanel service is locked to: the category of the
+   * product on its latest delivered order. null when it was never sold through
+   * the store (then any plan may renew it). Cached 10 minutes.
+   */
+  async serviceCategory(panelId: string, clientRef: string, email: string | null | undefined): Promise<string | null> {
+    if (!email) return null;
+    const key = `${panelId}:${clientRef}`;
+    const hit = this.categoryCache.get(key);
+    if (hit && Date.now() - hit.at < 10 * 60_000) return hit.categoryId;
+    const row = await this.prisma.panelConnection.findUnique({ where: { id: panelId } });
+    if (!row || row.type !== 'hmpanel') return null;
+    const store = this.gateway.hmStore(row);
+    let categoryId: string | null = null;
+    try {
+      const orders = await store.orders(email);
+      const delivered = orders
+        .filter((o) => o.client?.id === clientRef && ['ACTIVE', 'RENEWED', 'APPROVED', 'PROVISIONING'].includes(o.status) && o.product?.id)
+        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+      if (delivered[0]) {
+        const live = await this.liveFor(panelId);
+        categoryId = live.products?.find((p) => p.id === delivered[0].product!.id)?.category?.id ?? null;
+      }
+    } catch {
+      return hit?.categoryId ?? null;
+    }
+    this.categoryCache.set(key, { at: Date.now(), categoryId });
+    return categoryId;
   }
 
   /** Public branding with the HMPanel card and product prices filled in live (cached 5 min). */
@@ -686,6 +721,7 @@ function cleanPlans(plans: PlanInput[]): RenewalPlan[] {
       mode: p.mode === 'reset' ? 'reset' : 'add',
       ...(typeof p.productId === 'string' && p.productId.trim() ? { productId: p.productId.trim().slice(0, 64) } : {}),
       ...(p.service === 'xui' || p.service === 'pasarguard' ? { service: p.service } : {}),
+      ...(typeof p.categoryId === 'string' && p.categoryId.trim() ? { categoryId: p.categoryId.trim().slice(0, 64) } : {}),
       ...(typeof p.category === 'string' && p.category.trim() ? { category: p.category.trim().slice(0, 40) } : {}),
     }));
 }

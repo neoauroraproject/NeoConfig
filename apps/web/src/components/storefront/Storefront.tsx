@@ -15,6 +15,7 @@ import {
 } from '@/lib/accounts';
 import { ApiError, Branding, LookupResponse, PublicRenewal, ThemeId, publicApi } from '@/lib/api';
 import { THEME_CANVAS } from '@/lib/themes';
+import { deviceId } from '@/lib/device';
 import { Locale, isRtl } from '@/lib/i18n';
 import { PushState, disablePush, enablePush, followsOf, isIos, isStandalone, pushState, syncPush } from '@/lib/push';
 import { demoHistory, demoLookup } from './demo';
@@ -95,6 +96,19 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
     setTracked(known);
     setReady(true);
     setStandalone(isStandalone());
+    // Anonymous usage count: one «open» per device per day.
+    if (!demo) {
+      try {
+        const day = new Date().toISOString().slice(0, 10);
+        const key = `nc.track.${storeKey}`;
+        if (localStorage.getItem(key) !== day) {
+          localStorage.setItem(key, day);
+          void publicApi.track({ tenant, deviceId: deviceId(), event: 'open', standalone: isStandalone(), locale: navigator.language });
+        }
+      } catch {
+        /* ignore */
+      }
+    }
     if (!demo && 'serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(() => undefined);
     }
@@ -193,6 +207,10 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
     return demo ? demoLookup(url) : publicApi.lookup(url, tenant);
   }
 
+  function trackAdd(subId: string, displayName: string) {
+    void publicApi.track({ tenant, deviceId: deviceId(), event: 'add', standalone: isStandalone(), locale: navigator.language, subId, displayName });
+  }
+
   /** A bought service was delivered: add it to this device once, and follow it for reminders. */
   async function adoptPurchase(id: string, url: string) {
     const key = `nc.purchases.done.${storeKey}`;
@@ -208,6 +226,7 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
       const next = upsertAccount(stateRef.current, url, res);
       persist(next);
       void syncPush(tenant, followsOf(next.accounts));
+      trackAdd(accountId(res, url), res.snapshot.displayName);
       localStorage.setItem(key, JSON.stringify([...done, id].slice(-50)));
       setAdding(false);
       toast(t('newServiceAdded'));
@@ -316,6 +335,7 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
         }
         persist(next);
         void syncPush(tenant, followsOf(next.accounts));
+        if (!demo) trackAdd(id, res.snapshot.displayName);
       }
       setAdding(false);
     } catch (err) {

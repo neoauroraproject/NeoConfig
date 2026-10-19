@@ -16,6 +16,7 @@ import { PublicModule } from './public/public.module';
 import { PushModule } from './push/push.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { RenewalsModule } from './renewals/renewals.module';
+import { StatsModule } from './stats/stats.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { RenewalsModule } from './renewals/renewals.module';
     ServersModule,
     HmPanelModule,
     AdminModule,
+    StatsModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -194,6 +194,8 @@ model Brand {
   reminders ExpiryReminder[]
 
   @@index([orgId])
+  appDevices AppDevice[]
+  appSubscriptionAdds AppSubscriptionAdd[]
 }
 
 model BrandDomain {
@@ -473,3 +475,41 @@ model UsageDay {
   @@unique([brandId, subId, day])
   @@index([brandId, subId])
 }
+
+/// One phone/browser that opened a storefront (a random ID kept by the app).
+model AppDevice {
+  id         String   @id @default(cuid())
+  brandId    String
+  deviceId   String
+  platform   String
+  browser    String
+  /// Opened as the installed app at least once
+  standalone Boolean  @default(false)
+  locale     String?
+  opens      Int      @default(1)
+  firstSeen  DateTime @default(now())
+  lastSeen   DateTime @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([brandId, deviceId])
+  @@index([brandId, firstSeen])
+  @@index([brandId, lastSeen])
+}
+
+/// A subscription added on a device (once per device and subscription).
+model AppSubscriptionAdd {
+  id          String   @id @default(cuid())
+  brandId     String
+  deviceId    String
+  subId       String
+  displayName String?
+  platform    String
+  createdAt   DateTime @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([brandId, deviceId, subId])
+  @@index([brandId, createdAt])
+}
+

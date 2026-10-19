@@ -1,21 +1,23 @@
 'use client';
 
-import { BadgeCheck, LayoutGrid, LogOut, Menu, Palette, PlugZap, Send, Users, X } from 'lucide-react';
+import { BadgeCheck, BarChart3, LayoutGrid, LogOut, Menu, Palette, PlugZap, Send, Users, X } from 'lucide-react';
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { ApiError } from '@/lib/api';
 import { Me, adminApi, getToken, setToken } from './adminApi';
 import { Brands } from './Brands';
 import { OverviewPage } from './Overview';
+import { StatsPage } from './Stats';
 import { Panels } from './Panels';
 import { Renewals } from './Renewals';
 import { Team } from './Team';
 import { Button, Field, errMsg } from './ui';
 
-export type Section = 'overview' | 'brands' | 'panels' | 'renewals' | 'team';
+export type Section = 'overview' | 'stats' | 'brands' | 'panels' | 'renewals' | 'team';
 
 const NAV: Array<{ id: Section; label: string; icon: typeof LayoutGrid; adminOnly?: boolean }> = [
   { id: 'overview', label: 'داشبورد', icon: LayoutGrid },
   { id: 'renewals', label: 'تمدیدها', icon: BadgeCheck },
+  { id: 'stats', label: 'آمار کاربران', icon: BarChart3 },
   { id: 'brands', label: 'برندها', icon: Palette },
   { id: 'panels', label: 'اتصال پنل‌ها', icon: PlugZap, adminOnly: true },
   { id: 'team', label: 'تیم فروش', icon: Users, adminOnly: true },
@@ -191,6 +193,7 @@ export function AdminApp() {
 
       <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
         {section === 'overview' && <OverviewPage go={go} isAdmin={isAdmin} />}
+        {section === 'stats' && <StatsPage />}
         {section === 'renewals' && <Renewals />}
         {section === 'brands' && <Brands isAdmin={isAdmin} />}
         {section === 'panels' && isAdmin && <Panels />}

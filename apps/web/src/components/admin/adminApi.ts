@@ -141,6 +141,16 @@ export type ReminderSettings = {
   texts: Record<'days' | 'lastDay' | 'expired' | 'data' | 'dataOut' | 'approved' | 'rejected', { title: string; body: string }>;
 };
 
+export type StatsOverview = {
+  days: number;
+  totals: { devices: number; installed: number; newToday: number; new7d: number; active7d: number; subscriptions: number; newSubscriptions: number };
+  series: Array<{ date: string; devices: number; subscriptions: number; byPlatform: Record<string, number> }>;
+  platforms: Array<{ name: string; count: number }>;
+  browsers: Array<{ name: string; count: number }>;
+  recent: Array<{ at: string; name: string | null; platform: string; device: string; brand: { appName: string; primaryColor: string } }>;
+  brands: Array<{ id: string; appName: string }>;
+};
+
 export type HmCard = { id: string; bankName: string | null; cardNumber: string; cardHolder: string | null };
 export type HmProduct = {
   id: string;
@@ -230,6 +240,8 @@ export const adminApi = {
   uploadLogo: (id: string, dataUrl: string, variant: 'light' | 'dark' = 'light') =>
     request<AdminBrand>(`/api/v1/admin/brands/${id}/logo?variant=${variant}`, { method: 'POST', token: tk(), body: json({ dataUrl }) }),
   brandPanels: (id: string) => request<Array<{ id: string; name: string; type: string }>>(`/api/v1/admin/brands/${id}/panels`, { token: tk() }),
+  stats: (brandId?: string, days = 30) =>
+    request<StatsOverview>(`/api/v1/admin/stats?days=${days}${brandId ? `&brandId=${encodeURIComponent(brandId)}` : ''}`, { token: tk() }),
   pendingRenewals: () => request<{ count: number; latestAt: string | null }>('/api/v1/admin/renewals/pending', { token: tk() }),
   hmpanelPanels: (id: string) =>
     request<Array<{ id: string; name: string; host: string; healthy: boolean | null; inBrand: boolean }>>(`/api/v1/admin/brands/${id}/hmpanel`, {

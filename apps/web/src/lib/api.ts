@@ -224,6 +224,10 @@ export const publicApi = {
   createPurchase: (body: { tenant: string; planId: string; receipt: string; payerName?: string; payerNote?: string; deviceEndpoint?: string }) =>
     request<PublicRenewal>('/api/v1/public/purchases', { method: 'POST', body: JSON.stringify(body) }),
 
+  /** Anonymous usage: this device opened the app or added a subscription. Never throws. */
+  track: (body: { tenant: string; deviceId: string; event: 'open' | 'add'; standalone?: boolean; locale?: string; subId?: string; displayName?: string }) =>
+    request<{ ok: boolean }>('/api/v1/public/track', { method: 'POST', body: JSON.stringify(body) }).catch(() => ({ ok: false })),
+
   renewalStatus: (ids: string[]) =>
     request<PublicRenewal[]>('/api/v1/public/renewals/status', {
       method: 'POST',

@@ -23,6 +23,7 @@ import { Dashboard } from './Dashboard';
 import { Onboarding } from './Onboarding';
 import { PullToRefresh } from './PullToRefresh';
 import { Intro } from './Intro';
+import { InAppBanner } from './InAppBanner';
 import { RenewalDetailSheet } from './RenewalDetailSheet';
 import { RenewSheet } from './RenewSheet';
 import { AccountsSheet, InstallIosSheet, MenuSheet, QrSheet } from './Sheets';
@@ -567,6 +568,8 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
           }
         />
         <InstallIosSheet open={sheet === 'install'} onClose={() => setSheet(null)} />
+
+        {!showIntro && !demo && <InAppBanner />}
 
         <AnimatePresence>
           {showIntro && (

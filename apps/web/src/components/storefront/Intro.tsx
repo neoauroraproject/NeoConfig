@@ -1,14 +1,14 @@
 'use client';
 
 import { AnimatePresence, motion } from 'framer-motion';
-import { Bell, ExternalLink, MoreVertical, PlusSquare, Share } from 'lucide-react';
+import { Bell, Compass, ExternalLink, MoreVertical, PlusSquare, Share } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { PushState } from '@/lib/push';
+import { Platform, platform, systemBrowserUrl } from '@/lib/browser-env';
 import { BrandMark } from './BrandMark';
 import { useSf } from './context';
 
 type Step = 'welcome' | 'install' | 'notify';
-type Platform = 'ios-safari' | 'ios-other' | 'android' | 'android-inapp' | 'other';
 
 const COPY = {
   fa: {
@@ -23,6 +23,7 @@ const COPY = {
       action: 'نصب اپلیکیشن',
       got: 'نصبش کردم',
       ios: ['در نوار پایین ⁨Safari⁩ دکمهٔ «اشتراک‌گذاری» را بزن', '«⁨Add to Home Screen⁩» را انتخاب کن', 'بالای صفحه «⁨Add⁩» را بزن'],
+      safariTip: 'اگر «Add to Home Screen» را نمی‌بینی، یعنی داخل برنامهٔ دیگری هستی: آیکون قطب‌نما یا Safari را پایین صفحه بزن تا در Safari باز شود، بعد دوباره امتحان کن.',
       iosOther: 'در آیفون فقط Safari می‌تواند اپ را نصب کند و اعلان بفرستد. با دکمهٔ زیر همین صفحه در Safari باز می‌شود.',
       inApp: 'این صفحه داخل یک برنامهٔ دیگر باز شده و نصب نمی‌شود. با دکمهٔ زیر در Chrome باز کن.',
       openSafari: 'باز کردن در Safari',
@@ -51,6 +52,7 @@ const COPY = {
       action: 'Install app',
       got: 'I installed it',
       ios: ['Tap Share in Safari’s bottom bar', 'Choose “Add to Home Screen”', 'Tap “Add” at the top'],
+      safariTip: 'If you don’t see “Add to Home Screen”, you are inside another app: tap the compass / Safari icon at the bottom to open the page in Safari, then try again.',
       iosOther: 'On iPhone only Safari can install apps and send notifications. The button below opens this page in Safari.',
       inApp: 'This page is open inside another app and cannot be installed. Open it in Chrome below.',
       openSafari: 'Open in Safari',
@@ -68,29 +70,6 @@ const COPY = {
     start: 'Get started',
   },
 } as const;
-
-const IN_APP = /FBAN|FBAV|Instagram|Line\/|Twitter|Telegram|WhatsApp|Snapchat|; wv\)/i;
-
-function platform(): Platform {
-  if (typeof navigator === 'undefined') return 'other';
-  const ua = navigator.userAgent;
-  if (/iphone|ipad|ipod/i.test(ua)) {
-    // Chrome/Firefox/Edge on iPhone and in-app browsers cannot install or get notifications.
-    return /crios|fxios|edgios|opios/i.test(ua) || IN_APP.test(ua) ? 'ios-other' : 'ios-safari';
-  }
-  if (/android/i.test(ua)) return IN_APP.test(ua) ? 'android-inapp' : 'android';
-  return 'other';
-}
-
-/** A link that reopens this exact page in the system browser that can install it. */
-export function systemBrowserUrl(pf: Platform, href: string): string | null {
-  if (pf === 'ios-other') return `x-safari-${href}`;
-  if (pf === 'android-inapp') {
-    const u = new URL(href);
-    return `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=${u.protocol.replace(':', '')};package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(href)};end`;
-  }
-  return null;
-}
 
 /** Full-screen first-run guide: welcome, install to home screen, notifications. Skippable at any step. */
 export function Intro({
@@ -320,6 +299,7 @@ function InstallSteps({ pf, c }: { pf: Platform; c: (typeof COPY)['fa']['install
   const items = pf === 'ios-safari' ? c.ios : c.android;
   const icons = pf === 'ios-safari' ? [Share, PlusSquare, PlusSquare] : [MoreVertical, PlusSquare];
   return (
+    <>
     <ol className="mt-5 space-y-2">
       {items.map((text, n) => {
         const Icon = icons[n] ?? PlusSquare;
@@ -332,6 +312,8 @@ function InstallSteps({ pf, c }: { pf: Platform; c: (typeof COPY)['fa']['install
         );
       })}
     </ol>
+    {pf === 'ios-safari' && <p className="mt-3 flex items-start gap-2 text-xs leading-6 text-white/70"><Compass className="mt-1 h-3.5 w-3.5 shrink-0" />{c.safariTip}</p>}
+    </>
   );
 }
 

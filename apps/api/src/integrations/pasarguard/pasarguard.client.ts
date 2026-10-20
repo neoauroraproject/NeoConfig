@@ -92,6 +92,37 @@ export class PasarGuardClientService {
     }
   }
 
+  private credIndex = new Map<string, { at: number; urls: Map<string, string> }>();
+
+  /**
+   * The subscription link of the user a config belongs to, by the config's
+   * uuid / password. PasarGuard can't search by those, so the user list is
+   * indexed once and re-read only when a key is missing from a stale index.
+   */
+  async subscriptionUrlForCredential(cfg: PasarGuardConfig, key: string): Promise<string | null> {
+    const cacheKey = `${cfg.baseUrl}|${cfg.username ?? ''}`;
+    const hit = this.credIndex.get(cacheKey);
+    if (hit && (hit.urls.has(key) || Date.now() - hit.at < 30_000)) return hit.urls.get(key) ?? null;
+    const urls = new Map<string, string>();
+    const limit = 500;
+    for (let offset = 0; offset < 50_000; offset += limit) {
+      const page = await this.request<{ users?: PasarGuardListedUser[]; total?: number }>(
+        cfg,
+        'GET',
+        `/api/users?offset=${offset}&limit=${limit}`,
+      );
+      const users = page.users ?? [];
+      for (const u of users) {
+        if (!u.subscription_url) continue;
+        const link = absoluteUrl(cfg.baseUrl, u.subscription_url);
+        for (const cred of userCredentials(u)) urls.set(cred, link);
+      }
+      if (users.length < limit || (page.total !== undefined && offset + limit >= page.total)) break;
+    }
+    this.credIndex.set(cacheKey, { at: Date.now(), urls });
+    return urls.get(key) ?? null;
+  }
+
   /** Public `/info` endpoint — works without admin credentials. */
   async fetchPublicInfo(subUrl: string, timeoutMs = 12_000): Promise<PasarGuardMatch | null> {
     const base = subscriptionBase(subUrl);
@@ -343,6 +374,37 @@ function toMatch(user: PasarGuardUser): PasarGuardMatch {
     lastOnlineAt: onlineMs ? new Date(onlineMs).toISOString() : null,
     deviceLimit: typeof user.hwid_limit === 'number' ? user.hwid_limit : null,
   };
+}
+
+type ProxyCreds = Record<string, { id?: unknown; password?: unknown } | null | undefined>;
+
+interface PasarGuardListedUser {
+  username: string;
+  subscription_url?: string | null;
+  /** PasarGuard */
+  proxy_settings?: ProxyCreds | null;
+  /** Marzban */
+  proxies?: ProxyCreds | null;
+}
+
+/** Every uuid / password a user's configs can carry. */
+export function userCredentials(u: PasarGuardListedUser): string[] {
+  const out: string[] = [];
+  for (const group of [u.proxy_settings, u.proxies]) {
+    for (const p of Object.values(group ?? {})) {
+      for (const v of [p?.id, p?.password]) if (typeof v === 'string' && v) out.push(v);
+    }
+  }
+  return out;
+}
+
+/** subscription_url is relative when the panel has no XRAY_SUBSCRIPTION_URL_PREFIX. */
+function absoluteUrl(base: string, link: string) {
+  try {
+    return new URL(link, base).toString();
+  } catch {
+    return link;
+  }
 }
 
 function num(v: unknown): number | null {

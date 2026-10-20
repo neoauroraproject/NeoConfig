@@ -18,6 +18,8 @@ export interface HmPanelClient {
   remark: string | null;
   subId: string | null;
   subToken: string | null;
+  /** `{origin}/s/{token}` */
+  subscriptionUrl?: string | null;
   enable: boolean;
   status: 'active' | 'disabled' | 'expired' | 'limited';
   upBytes: number;

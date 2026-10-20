@@ -144,6 +144,19 @@ export class PanelGatewayService {
     }
   }
 
+  /** The subscription link behind a pasted config, by the config's uuid / password. */
+  async subscriptionUrlForCredential(row: PanelConnection, key: string): Promise<string | null> {
+    const cfg = this.creds(row);
+    try {
+      if (row.type === 'hmpanel') return (await this.hmpanel.lookup(cfg, key))?.subscriptionUrl ?? null;
+      if (row.type === 'pasarguard') return await this.pasarguard.subscriptionUrlForCredential(cfg, key);
+      return await this.xui.subscriptionUrlForCredential(cfg, key);
+    } catch (err) {
+      this.logger.warn(`Config lookup on panel ${row.name} failed: ${err instanceof Error ? err.message : err}`);
+      return null;
+    }
+  }
+
   /** HMPanel's premium store for this connection (cards, products, orders). */
   hmStore(row: PanelConnection) {
     if (row.type !== 'hmpanel') throw new Error('Not an HMPanel connection');

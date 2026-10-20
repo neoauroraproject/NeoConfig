@@ -305,6 +305,48 @@ export class XuiClientService {
     return result;
   }
 
+  /**
+   * The subscription link of the client a config belongs to, found by the
+   * config's uuid / password. null when no client has it, it has no subId, or
+   * the panel's subscription service is off.
+   */
+  async subscriptionUrlForCredential(cfg: XuiConnectionConfig, key: string): Promise<string | null> {
+    const source = await this.clientSource(cfg);
+    const match = source.matches.find(({ client }) =>
+      [client.id, client.uuid, client.password, client.auth].some((v) => v !== undefined && v !== null && String(v) === key),
+    );
+    const subId = match?.client.subId;
+    if (!subId) return null;
+    const base = await this.subscriptionBaseUri(cfg);
+    return base ? `${base}${encodeURIComponent(subId)}` : null;
+  }
+
+  private subUriCache = new Map<string, { at: number; uri: string | null }>();
+
+  /** `https://sub.example.com:2096/sub/` — what the panel puts before a subId. */
+  private async subscriptionBaseUri(cfg: XuiConnectionConfig): Promise<string | null> {
+    const key = cacheKey(cfg);
+    const hit = this.subUriCache.get(key);
+    if (hit && Date.now() - hit.at < 10 * 60_000) return hit.uri;
+    const session = await this.authenticate(cfg);
+    const host = new URL(cfg.baseUrl).hostname;
+    let uri: string | null = null;
+    // defaultSettings fills in subURI from domain/port/path when it is left empty; /all is the raw form.
+    for (const path of [
+      '/panel/api/setting/defaultSettings',
+      '/panel/setting/defaultSettings',
+      '/panel/api/setting/all',
+      '/panel/setting/all',
+    ]) {
+      const res = await this.request<Record<string, unknown>>(cfg, 'POST', path, { session }).catch(() => null);
+      if (!res?.success || !res.obj || typeof res.obj !== 'object') continue;
+      uri = subscriptionUriFromSettings(res.obj, host);
+      if (uri) break;
+    }
+    this.subUriCache.set(key, { at: Date.now(), uri });
+    return uri;
+  }
+
   /** Devices registered under a client's HWID limit (3x-ui 3.7+). */
   private async hwidCount(cfg: XuiConnectionConfig, email: string): Promise<number | null> {
     const session = await this.authenticate(cfg);
@@ -790,6 +832,21 @@ export function aggregateMatches(
     lastOnlineAt: lastOnline > 0 ? new Date(lastOnline).toISOString() : null,
     renewable: true,
   };
+}
+
+/** Mirrors 3x-ui's own subURI default: scheme from the sub TLS files, port only when not the scheme's default. */
+export function subscriptionUriFromSettings(s: Record<string, unknown>, panelHost: string): string | null {
+  const withSlash = (u: string) => (u.endsWith('/') ? u : `${u}/`);
+  if (typeof s.subURI === 'string' && s.subURI.trim()) return withSlash(s.subURI.trim());
+  if (s.subEnable === false) return null;
+  const port = Number(s.subPort);
+  if (!port) return null;
+  const tls = Boolean(s.subCertFile && s.subKeyFile);
+  const domain = (typeof s.subDomain === 'string' && s.subDomain.trim()) || panelHost;
+  const defaultPort = (tls && port === 443) || (!tls && port === 80);
+  const rawPath = typeof s.subPath === 'string' && s.subPath ? s.subPath : '/sub/';
+  const path = withSlash(rawPath.startsWith('/') ? rawPath : `/${rawPath}`);
+  return `${tls ? 'https' : 'http'}://${domain}${defaultPort ? '' : `:${port}`}${path}`;
 }
 
 function looksLikeInfo(v: unknown): v is XuiSubInfoViewModel {

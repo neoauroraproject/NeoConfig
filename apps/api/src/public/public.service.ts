@@ -1,6 +1,7 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Brand } from '@prisma/client';
 import { BrandsService } from '../brands/brands.service';
+import { parseConfigLink } from '../common/config-link';
 import { redactUrl } from '../common/crypto/secret.crypto';
 import { assertPublicHttpUrl, resolveAndAssertPublic, SsrfError } from '../common/ssrf/ssrf.guard';
 import { PasarGuardClientService } from '../integrations/pasarguard/pasarguard.client';
@@ -26,6 +27,9 @@ export interface LookupResult {
   account: FoundAccount | null;
 }
 
+const NOT_FOUND =
+  'We could not find this subscription. Check the link, or ask support to confirm it is still active.';
+
 /** Calendar day where the customers are (daily usage is a local-day idea). */
 export function usageDay(now = new Date(), timeZone = process.env.USAGE_TIMEZONE || 'Asia/Tehran') {
   try {
@@ -49,11 +53,13 @@ export class PublicService {
     return this.brands.toPublicLive(await this.brands.resolve(tenant));
   }
 
-  async lookupForTenant(url: string, tenant?: string) {
+  async lookupForTenant(input: string, tenant?: string) {
     const brand = await this.brands.resolve(tenant);
     if (!brand) throw new NotFoundException('No storefront is configured yet');
+    let url: string;
     let result: LookupResult;
     try {
+      url = await this.resolveInput(brand, input);
       result = await this.lookup(brand, url);
     } catch (err) {
       if (err instanceof NotFoundException) this.logLookup(brand.id, false, 'none');
@@ -72,6 +78,8 @@ export class PublicService {
     const { account: _account, ...publicPart } = result;
     return {
       ...publicPart,
+      // The link the app should keep — the subscription link when a config was pasted.
+      url,
       history,
       storeCategoryId,
       // Which panel the subscription lives on, so the app offers that panel's plans.
@@ -110,6 +118,32 @@ export class PublicService {
   }
 
   /**
+   * A pasted config stands in for its subscription link: the uuid / password in
+   * it finds the client on the brand's panels, and with it the real link.
+   */
+  private async resolveInput(brand: Brand & { panels: { id: string }[] }, input: string): Promise<string> {
+    const text = input.trim();
+    if (/^https?:\/\//i.test(text)) return text;
+    const cred = parseConfigLink(text);
+    if (!cred) throw new BadRequestException('Paste your subscription link');
+    for (const panel of await this.brandPanels(brand, cred.host)) {
+      const url = await this.gateway.subscriptionUrlForCredential(panel, cred.key);
+      if (url) return url;
+    }
+    throw new NotFoundException(NOT_FOUND);
+  }
+
+  /** The brand's panels, the ones on `host` first (the likeliest match). */
+  private async brandPanels(brand: Brand & { panels: { id: string }[] }, host: string | null) {
+    const panelIds = brand.panels.map((p) => p.id);
+    const panels = await this.prisma.panelConnection.findMany({
+      where: panelIds.length ? { id: { in: panelIds } } : { orgId: brand.orgId },
+      orderBy: { createdAt: 'asc' },
+    });
+    return panels.sort((a, b) => sameHost(b.baseUrl, host) - sameHost(a.baseUrl, host));
+  }
+
+  /**
    * Find the account behind a subscription link: search the brand's panels by
    * the subId in the URL (or the PasarGuard token), then fall back to the
    * subscription endpoint's own metadata.
@@ -117,15 +151,8 @@ export class PublicService {
   async lookup(brand: Brand & { panels: { id: string }[] }, url: string): Promise<LookupResult> {
     const parsed = this.parseUrl(url);
     const subId = extractSubId(url);
-    const panelIds = brand.panels.map((p) => p.id);
-    const panels = await this.prisma.panelConnection.findMany({
-      where: panelIds.length ? { id: { in: panelIds } } : { orgId: brand.orgId },
-      orderBy: { createdAt: 'asc' },
-    });
-    // Panels on the same host as the link are the likeliest match.
-    panels.sort((a, b) => sameHost(b.baseUrl, parsed) - sameHost(a.baseUrl, parsed));
 
-    for (const panel of panels) {
+    for (const panel of await this.brandPanels(brand, parsed.hostname)) {
       const found = await this.gateway.find(panel, url, subId);
       if (found) {
         return {
@@ -149,9 +176,7 @@ export class PublicService {
     await this.assertFetchable(parsed);
     const fallback = await this.fromSubscriptionEndpoint(url, subId);
     if (!fallback) {
-      throw new NotFoundException(
-        'We could not find this subscription. Check the link, or ask support to confirm it is still active.',
-      );
+      throw new NotFoundException(NOT_FOUND);
     }
     return {
       subId: subId ?? fallback.snapshot.subscriptionId,
@@ -206,18 +231,16 @@ export class PublicService {
       await resolveAndAssertPublic(parsed);
     } catch (err) {
       if (err instanceof SsrfError) {
-        throw new NotFoundException(
-          'We could not find this subscription. Check the link, or ask support to confirm it is still active.',
-        );
+        throw new NotFoundException(NOT_FOUND);
       }
       throw err;
     }
   }
 }
 
-function sameHost(base: string, link: URL): number {
+function sameHost(base: string, host: string | null): number {
   try {
-    return new URL(base).hostname === link.hostname ? 1 : 0;
+    return host && new URL(base).hostname === host ? 1 : 0;
   } catch {
     return 0;
   }

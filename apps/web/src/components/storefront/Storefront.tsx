@@ -9,6 +9,7 @@ import {
   accountId,
   loadAccounts,
   loadRenewals,
+  pickLink,
   saveAccounts,
   saveRenewals,
   upsertAccount,
@@ -311,15 +312,18 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
     }
   }
 
-  async function addAccount(url: string) {
-    if (!/^https?:\/\/\S+$/i.test(url)) {
+  async function addAccount(input: string) {
+    const pasted = pickLink(input);
+    if (!pasted) {
       setError(t('err_invalid'));
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      const res = await lookup(url);
+      const res = await lookup(pasted);
+      // A pasted config comes back with its subscription link; keep the link.
+      const url = res.url || pasted;
       const id = accountId(res, url);
       if (adding && state.accounts.some((a) => a.id === id)) {
         persist({ ...state, activeId: id });

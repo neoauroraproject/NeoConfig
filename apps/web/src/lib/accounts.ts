@@ -69,6 +69,17 @@ export function saveAccounts(tenant: string, state: AccountState) {
   write(key(tenant), state);
 }
 
+const LINK_RE = /^(https?|vless|vmess|trojan|ss|hysteria2?|hy2|tuic):\/\/\S+$/i;
+
+/**
+ * The subscription link in a paste — or, when people paste one of their configs
+ * instead (`vless://…`), that config; the server swaps it for the real link.
+ */
+export function pickLink(text: string): string | null {
+  const lines = text.split(/\r?\n/).map((l) => l.trim());
+  return lines.find((l) => /^https?:\/\//i.test(l) && LINK_RE.test(l)) ?? lines.find((l) => LINK_RE.test(l)) ?? null;
+}
+
 export function accountId(res: LookupResponse, url: string) {
   return res.subId || res.snapshot.subscriptionId || url;
 }

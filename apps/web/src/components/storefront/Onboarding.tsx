@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion';
 import { ArrowUpLeft, ArrowUpRight, ClipboardPaste, Download, Loader2, ShoppingBag } from 'lucide-react';
 import { FormEvent, useEffect, useRef, useState } from 'react';
+import { pickLink } from '@/lib/accounts';
 import { BrandMark } from './BrandMark';
 import { useSf } from './context';
 
@@ -38,11 +39,11 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
   }
 
   function take(text: string) {
-    const clean = text.trim();
+    const clean = pickLink(text) ?? text.trim();
     if (!clean) return;
     setUrl(clean);
     setPasteHint(false);
-    if (/^https?:\/\//i.test(clean) && !busy) onSubmit(clean);
+    if (pickLink(clean) && !busy) onSubmit(clean);
   }
 
   /**
@@ -124,7 +125,7 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
                 onPaste={(e) => {
                   // A native paste (keyboard or long-press) goes straight to the lookup.
                   const text = e.clipboardData.getData('text');
-                  if (/^https?:\/\//i.test(text.trim())) {
+                  if (pickLink(text)) {
                     e.preventDefault();
                     take(text);
                   }

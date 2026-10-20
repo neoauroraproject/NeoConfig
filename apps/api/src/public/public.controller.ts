@@ -1,13 +1,14 @@
 import { Body, Controller, Get, HttpCode, NotFoundException, Param, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
-import { IsOptional, IsString, IsUrl, MaxLength } from 'class-validator';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 import { BrandsService } from '../brands/brands.service';
 import { PublicService } from './public.service';
 
 class LookupDto {
-  @IsUrl({ require_tld: false, protocols: ['http', 'https'] })
-  @MaxLength(2048)
+  /** A subscription link, or one of its configs (`vless://…`) — see PublicService.resolveInput. */
+  @IsString()
+  @MaxLength(8192)
   url!: string;
 
   @IsOptional()

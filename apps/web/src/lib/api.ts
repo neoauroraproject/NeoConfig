@@ -31,6 +31,8 @@ export type NormalizedSnapshot = {
 };
 
 export type LookupResponse = {
+  /** The link to keep: the subscription link, even when a config was looked up. */
+  url?: string;
   subId: string | null;
   redactedUrl: string;
   snapshot: NormalizedSnapshot;

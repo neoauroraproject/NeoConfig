@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { PanelConnection } from '@prisma/client';
 import { decryptSecret } from '../common/crypto/secret.crypto';
@@ -174,7 +175,19 @@ export class PanelGatewayService {
       order: (id: string) => hm.getOrder(cfg, id),
       approve: (id: string) => hm.approveOrder(cfg, id),
       reject: (id: string, reason: string) => hm.rejectOrder(cfg, id, reason),
+      notify: (body: Parameters<HmPanelClientService['notify']>[1]) => hm.notify(cfg, body),
+      closeNotice: (body: Parameters<HmPanelClientService['closeNotice']>[1]) => hm.closeNotice(cfg, body),
     };
+  }
+
+  /** HMPanel signs webhooks with HMAC-SHA256 of the body, keyed with sha256(api key). */
+  verifyHmWebhook(row: PanelConnection, rawBody: Buffer, signature: string | undefined): boolean {
+    const key = this.creds(row).apiToken;
+    if (row.type !== 'hmpanel' || !key || !signature) return false;
+    const keyHash = createHash('sha256').update(key).digest('hex');
+    const expected = Buffer.from(`sha256=${createHmac('sha256', keyHash).update(rawBody).digest('hex')}`);
+    const got = Buffer.from(signature);
+    return got.length === expected.length && timingSafeEqual(got, expected);
   }
 
   async renew(

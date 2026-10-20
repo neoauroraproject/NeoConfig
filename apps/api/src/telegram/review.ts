@@ -35,6 +35,8 @@ export interface ReviewInfo {
   pendingCount?: number;
   /** The account was matched on a panel, so approval renews it automatically. */
   canApply?: boolean;
+  /** HMPanel's store refused the order, so it is reviewed here instead; its own words. */
+  storeRefused?: string | null;
 }
 
 /** Inline-button reasons; the text is what the customer sees in their app. */
@@ -158,6 +160,7 @@ export function receiptCaption(appName: string, r: RenewalNotice): string {
     }
     if (v.canApply === false) checks.push('⚠️ اکانت روی پنل پیدا نشد؛ «تمدید خودکار» دوباره جست‌وجو می‌کند، وگرنه دستی تمدید کنید');
     else if (v.canApply) checks.push('✅ اکانت روی پنل پیدا شد؛ تمدید خودکار آماده است');
+    if (v.storeRefused) checks.push(`⚠️ فروشگاه HMPanel این تمدید را نپذیرفت: <i>${esc(v.storeRefused.slice(0, 160))}</i> — برای همین اینجا آمد`);
     if (v.pendingCount && v.pendingCount > 1) checks.push(`⚠️ ${v.pendingCount} درخواست باز برای این اشتراک`);
     if (v.approvedBefore) {
       const last = v.lastApprovedAt ? ` · آخرین: ${faDate(v.lastApprovedAt)}` : '';

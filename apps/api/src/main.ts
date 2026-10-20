@@ -10,7 +10,7 @@ import * as bcrypt from 'bcryptjs';
 import { Role } from '@prisma/client';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: false });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   // Renewal receipts arrive as base64 images.
   app.useBodyParser('json', { limit: '5mb' });
   app.set('trust proxy', 1);

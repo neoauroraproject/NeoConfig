@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, RawBodyRequest, Req, Res, UseGuards } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { Throttle } from '@nestjs/throttler';
 import {
@@ -10,7 +10,7 @@ import {
   IsUrl,
   MaxLength,
 } from 'class-validator';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { AuthUser } from '../auth/auth.types';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -68,6 +68,18 @@ export class RenewalsController {
   @HttpCode(200)
   status(@Body() body: StatusDto) {
     return this.renewals.statuses(body.ids);
+  }
+
+  /** HMPanel posts presses on its store bot's copy of a receipt here (signed with the connection's API key). */
+  @Post('public/hmpanel/hook/:panelId')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  hmWebhook(
+    @Param('panelId') panelId: string,
+    @Req() req: RawBodyRequest<Request>,
+    @Headers('x-hmpanel-signature') signature?: string,
+  ) {
+    return this.renewals.hmWebhook(panelId, req.rawBody, signature, req.body);
   }
 
   @Get('admin/renewals')

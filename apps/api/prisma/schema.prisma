@@ -369,6 +369,8 @@ model RenewalRequest {
   kind             String    @default("renewal")
   /// The receipt messages sent to each admin in Telegram (JSON), closed after the decision
   telegramMsgs     String?
+  /// Copy sent to the HMPanel store bot (store/notify): {panelId, chatId, messageId}
+  hmNotifyJson     String?
   /// Decided by the brand's timer, not a person
   autoDecided      Boolean   @default(false)
   autoTriedAt      DateTime?

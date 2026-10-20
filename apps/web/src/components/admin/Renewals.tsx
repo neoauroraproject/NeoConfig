@@ -132,8 +132,8 @@ function RenewalCard({ r, onDone }: { r: AdminRenewal; onDone: () => void }) {
           </p>
           {pending && r.applyMessage && (
             <p className="mt-1 rounded-lg bg-[#fff7ec] px-2.5 py-1.5 text-xs leading-6 text-[#7a4a0b]">
-              {/store/i.test(r.applyMessage)
-                ? 'فروشگاه HMPanel این سرویس را نپذیرفت (سرویس متعلق به ادمین دیگری است یا از فروشگاه خریده نشده)؛ همین‌جا یا با ربات NeoConfig بررسی کن — تمدید خودکار از طریق HMPanel انجام می‌شود.'
+              {/^HMPanel store:/i.test(r.applyMessage)
+                ? `فروشگاه HMPanel این تمدید را نپذیرفت: «${r.applyMessage.replace(/^HMPanel store:\s*/i, '').replace(/\s*— reviewed in NeoConfig$/, '')}» — همین‌جا یا با ربات NeoConfig بررسی کن؛ تأیید، از طریق API کاربران HMPanel تمدید می‌کند.`
                 : r.applyMessage}
             </p>
           )}

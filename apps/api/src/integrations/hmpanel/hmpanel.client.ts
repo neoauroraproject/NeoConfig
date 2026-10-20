@@ -214,6 +214,20 @@ export class HmPanelClientService {
     return this.request<HmPanelOrder>(cfg, 'POST', '/v1/premium/store/orders', body);
   }
 
+  /** The store bot shows this to the store admin with approve / reject; presses come back to callbackUrl. */
+  async notify(cfg: HmPanelConfig, body: { text: string; photo?: string | null; ref: string; callbackUrl: string }) {
+    return this.request<{ sent: boolean; chatId?: string; messageId?: number; reason?: string }>(
+      cfg,
+      'POST',
+      '/v1/premium/store/notify',
+      body,
+    );
+  }
+
+  async closeNotice(cfg: HmPanelConfig, body: { chatId: string; messageId: number; text: string }) {
+    return this.request<{ ok: boolean }>(cfg, 'POST', '/v1/premium/store/notify/close', body);
+  }
+
   async getOrder(cfg: HmPanelConfig, id: string) {
     return this.request<HmPanelOrder>(cfg, 'GET', `/v1/premium/store/orders/${encodeURIComponent(id)}`);
   }

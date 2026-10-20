@@ -228,7 +228,10 @@ export class BrandsService {
     const data: Prisma.BrandUncheckedUpdateInput = { ...this.editable(input) };
     if (brand.renewalPanelId) this.live.delete(brand.renewalPanelId);
     if (typeof data.renewalPanelId === 'string') {
-      const ok = await this.prisma.panelConnection.findFirst({ where: { id: data.renewalPanelId, orgId: brand.orgId, type: 'hmpanel' } });
+      const ok =
+        isOrgAdmin(user) || (await this.hmpanelPanels(user, id)).some((p) => p.id === data.renewalPanelId)
+          ? await this.prisma.panelConnection.findFirst({ where: { id: data.renewalPanelId, orgId: brand.orgId, type: 'hmpanel' } })
+          : null;
       if (!ok && data.renewalPanelId === brand.renewalPanelId) {
         // The saved connection was deleted since: drop the link instead of blocking every save.
         data.renewalPanelId = null;
@@ -500,8 +503,11 @@ export class BrandsService {
     const brand = await this.mustOwn(user, id);
     const own = await this.prisma.brand.findUnique({ where: { id }, select: { panels: { select: { id: true } } } });
     const ids = own?.panels.map((p) => p.id) ?? [];
+    // A reseller works only with the connections an admin gave their brand (their own HMPanel key),
+    // so renewals come out of their own quota and they never see the org's other stores.
+    if (!isOrgAdmin(user) && !ids.length) return [];
     const panels = await this.prisma.panelConnection.findMany({
-      where: { orgId: brand.orgId, type: 'hmpanel' },
+      where: { orgId: brand.orgId, type: 'hmpanel', ...(isOrgAdmin(user) ? {} : { id: { in: ids } }) },
       select: { id: true, name: true, baseUrl: true, lastTestOk: true },
       orderBy: { name: 'asc' },
     });

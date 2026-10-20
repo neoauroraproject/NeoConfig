@@ -193,7 +193,14 @@ export function HmPanelTab({
               ) : (
                 <Warn>{data.account.ok ? '' : data.account.error}</Warn>
               )}
-              <p className="mt-3 text-xs leading-6 text-[var(--ink-3)]">تمدیدها از سهمیه و اعتبار همین ادمین کم می‌شود.</p>
+              {account?.role === 'SUPER_ADMIN' ? (
+                <Warn>
+                  این کلید سوپرادمین است؛ HMPanel برای تمدیدهایی که با آن انجام شود از سهمیهٔ هیچ نماینده‌ای کم نمی‌کند. برای برند هر نماینده، یک اتصال
+                  HMPanel با کلید API خود همان نماینده بسازید و در «پنل و نماینده» به برندش بدهید.
+                </Warn>
+              ) : (
+                <p className="mt-3 text-xs leading-6 text-[var(--ink-3)]">تمدیدها مستقیم روی کلاینت انجام و حجمش از سهمیهٔ همین نماینده روی همان پنل کم می‌شود.</p>
+              )}
             </Card>
             <Card>
               <Head icon={<Store className="h-5 w-5" />} title="فروشگاه" />

@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
-import { PanelConnection, RenewalRequest, RenewalStatus } from '@prisma/client';
+import { Brand, PanelConnection, RenewalRequest, RenewalStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../auth/auth.types';
 import { BrandsService, hmError, parsePlans } from '../brands/brands.service';
@@ -15,6 +15,7 @@ import { PublicService } from '../public/public.service';
 import { PushService } from '../push/push.service';
 import { fill, parseReminderSettings } from '../push/reminder-settings';
 import { ReviewInfo, SentReceipt, TelegramService } from '../telegram/telegram.service';
+import { decisionLine, RenewalNotice } from '../telegram/review';
 
 type RenewalRow = Omit<RenewalRequest, 'receiptData'>;
 
@@ -142,6 +143,7 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
         deviceEndpoint: input.deviceEndpoint?.slice(0, 1024) || null,
       },
     });
+    let storeRefused: string | null = null;
     if (hmPanel && hmClientId) {
       try {
         const order = await this.gateway.hmStore(hmPanel).createOrder({
@@ -176,6 +178,8 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
         }
         // The store only renews services it sold to its own admin. Review it here instead;
         // approval still renews through HMPanel's client API (same admin credit, same inbounds).
+        storeRefused = hmError(err);
+        this.logger.warn(`HMPanel store refused renewal ${row.id}: ${storeRefused}`);
         await this.prisma.renewalRequest
           .update({ where: { id: row.id }, data: { applyMessage: `HMPanel store: ${hmError(err)} — reviewed in NeoConfig` } })
           .catch(() => undefined);
@@ -183,7 +187,13 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
     }
 
     void this.review(row, found.snapshot)
-      .then((review) => this.telegram.renewalReceived(brand, { ...row, review }, { mime, data }))
+      .then((review) => {
+        const notice = { ...row, review: { ...review, storeRefused } };
+        void this.notifyHmStore(brand, row, notice, input.receipt).catch((err) =>
+          this.logger.warn(`HMPanel store bot notice for ${row.id} failed: ${err instanceof Error ? err.message : err}`),
+        );
+        return this.telegram.renewalReceived(brand, notice, { mime, data });
+      })
       .then((refs) => this.saveTelegramRefs(row.id, refs))
       .catch(() => undefined);
     return this.toPublic(row);
@@ -393,7 +403,10 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
             });
           }
         } catch (err) {
-          this.logger.warn(`Auto decision for ${row.id} left for a person: ${err instanceof Error ? err.message : err}`);
+          const reason = err instanceof Error ? err.message : String(err);
+          this.logger.warn(`Auto decision for ${row.id} left for a person: ${reason}`);
+          // It is tried once; say so, or the receipt just sits there looking handled.
+          void this.alertAutoFailed(row, reason).catch(() => undefined);
         }
       }
     }
@@ -628,11 +641,107 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
     row: { id: string; brandId: string; displayName: string | null; subId: string; planTitle: string; price?: string },
     decision: { approved: boolean; by: string; appliedOnPanel: boolean | null; note?: string | null },
   ) {
+    const summary = `👤 ${escHtml(row.displayName || row.subId)} · ${escHtml(row.planTitle)}${row.price ? ` — ${escHtml(row.price)}` : ''}`;
+    const fresh = await this.prisma.renewalRequest
+      .findUnique({ where: { id: row.id }, select: { telegramMsgs: true, hmNotifyJson: true } })
+      .catch(() => null);
+    // The HMPanel bot's copy closes too, whichever side decided.
+    void this.closeHmNotice(fresh?.hmNotifyJson, `${decisionLine(decision)}\n${summary}`);
     const brand = await this.prisma.brand.findUnique({ where: { id: row.brandId } }).catch(() => null);
     if (!brand || !this.telegram.isConfigured(brand)) return;
-    const fresh = await this.prisma.renewalRequest.findUnique({ where: { id: row.id }, select: { telegramMsgs: true } }).catch(() => null);
-    const summary = `👤 ${escHtml(row.displayName || row.subId)} · ${escHtml(row.planTitle)}${row.price ? ` — ${escHtml(row.price)}` : ''}`;
     await this.telegram.closeReceipts(brand, readRefs(fresh?.telegramMsgs), decision, summary).catch(() => undefined);
+  }
+
+  /**
+   * The HMPanel store bot gets the same receipt with approve / reject. The
+   * decision still happens here (a direct renewal on the client), whichever bot it came from.
+   */
+  private async notifyHmStore(brand: Brand, row: { id: string; panelId: string | null }, notice: RenewalNotice, receipt: string) {
+    const app = (this.config.get<string>('APP_URL') || '').replace(/\/+$/, '');
+    if (!/^https?:\/\//.test(app)) return;
+    const own = row.panelId ? await this.prisma.panelConnection.findUnique({ where: { id: row.panelId } }) : null;
+    const panel =
+      own?.type === 'hmpanel'
+        ? own
+        : brand.renewalPanelId
+          ? await this.prisma.panelConnection.findFirst({ where: { id: brand.renewalPanelId, type: 'hmpanel' } })
+          : null;
+    if (!panel) return;
+    const res = await this.gateway.hmStore(panel).notify({
+      text: this.telegram.receiptCaption(brand, notice),
+      photo: receipt,
+      ref: row.id,
+      callbackUrl: `${app}/api/v1/public/hmpanel/hook/${panel.id}`,
+    });
+    if (!res.sent || !res.chatId || !res.messageId) {
+      this.logger.warn(`HMPanel store bot did not take receipt ${row.id}: ${res.reason ?? 'no message id'}`);
+      return;
+    }
+    await this.prisma.renewalRequest.update({
+      where: { id: row.id },
+      data: { hmNotifyJson: JSON.stringify({ panelId: panel.id, chatId: res.chatId, messageId: res.messageId }) },
+    });
+  }
+
+  private async closeHmNotice(json: string | null | undefined, text: string) {
+    const ref = readHmNotice(json);
+    if (!ref) return;
+    const panel = await this.prisma.panelConnection.findUnique({ where: { id: ref.panelId } }).catch(() => null);
+    if (!panel) return;
+    await this.gateway
+      .hmStore(panel)
+      .closeNotice({ chatId: ref.chatId, messageId: ref.messageId, text })
+      .catch((err) => this.logger.warn(`Closing HMPanel notice failed: ${err instanceof Error ? err.message : err}`));
+  }
+
+  /** A press on the HMPanel store bot's copy of a receipt, POSTed (signed) by HMPanel. */
+  async hmWebhook(panelId: string, rawBody: Buffer | undefined, signature: string | undefined, body: unknown) {
+    const panel = await this.prisma.panelConnection.findUnique({ where: { id: panelId } });
+    if (!panel || !rawBody || !this.gateway.verifyHmWebhook(panel, rawBody, signature)) {
+      return { ok: false, message: 'Signature check failed' };
+    }
+    const event = body as {
+      type?: string;
+      payload?: { ref?: string; action?: string; by?: { name?: string | null; username?: string | null } };
+    };
+    // The same URL also receives HMPanel's other events; only button presses matter here.
+    if (event?.type !== 'store.notify.action') return { ok: true };
+    const p = event.payload ?? {};
+    const row = p.ref ? await this.prisma.renewalRequest.findUnique({ where: { id: p.ref }, omit: { receiptData: true } }) : null;
+    if (!row || readHmNotice(row.hmNotifyJson)?.panelId !== panel.id) return { ok: false, message: 'این رسید پیدا نشد' };
+    if (row.status !== RenewalStatus.PENDING) {
+      void this.closeHmNotice(row.hmNotifyJson, row.status === RenewalStatus.APPROVED ? '✅ قبلاً تأیید شده' : '❌ قبلاً رد شده');
+      return { ok: true, message: 'این رسید قبلاً بررسی شده' };
+    }
+    const who = p.by?.name || (p.by?.username ? `@${p.by.username}` : null);
+    const by = `ربات HMPanel${who ? ` · ${who}` : ''}`;
+    try {
+      if (p.action === 'approve') {
+        const r = await this.decideFromTelegram(row.brandId, row.id, { approve: true }, by);
+        return { ok: true, message: 'appliedOnPanel' in r && r.appliedOnPanel ? 'تأیید و روی پنل تمدید شد' : 'تأیید شد' };
+      }
+      if (p.action === 'reject') {
+        await this.decideFromTelegram(row.brandId, row.id, { approve: false }, by);
+        return { ok: true, message: 'رد شد و به کاربر اطلاع داده شد' };
+      }
+      return { ok: false, message: 'Unknown action' };
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : 'انجام نشد' };
+    }
+  }
+
+  private async alertAutoFailed(row: { brandId: string; displayName: string | null; subId: string; planTitle: string }, reason: string) {
+    const brand = await this.prisma.brand.findUnique({ where: { id: row.brandId } });
+    if (!brand || !this.telegram.isConfigured(brand)) return;
+    await this.telegram.broadcast(
+      brand,
+      `⚠️ <b>تأیید خودکار انجام نشد</b>
+👤 ${escHtml(row.displayName || row.subId)} · ${escHtml(row.planTitle)}
+` +
+        `علت: <i>${escHtml(reason.slice(0, 300))}</i>
+` +
+        'رسید هنوز منتظر بررسی است — با دکمه‌های همان پیام تأیید کنید (یا «تأیید بدون تمدید» و تمدید دستی).',
+    );
   }
 
   private async saveTelegramRefs(id: string, refs: SentReceipt[]) {
@@ -782,6 +891,18 @@ export function storeCannotRenew(err: unknown) {
 export function configNameFrom(name: string | null) {
   const latin = (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 16);
   return latin.length >= 3 ? latin : 'user';
+}
+
+function readHmNotice(json: string | null | undefined): { panelId: string; chatId: string; messageId: number } | null {
+  if (!json) return null;
+  try {
+    const v = JSON.parse(json) as { panelId?: unknown; chatId?: unknown; messageId?: unknown };
+    return typeof v.panelId === 'string' && v.chatId && Number(v.messageId) > 0
+      ? { panelId: v.panelId, chatId: String(v.chatId), messageId: Number(v.messageId) }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function readRefs(json: string | null | undefined): SentReceipt[] {

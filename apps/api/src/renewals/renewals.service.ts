@@ -268,15 +268,12 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
         data: { externalOrderId: order.orderId ?? order.id ?? null, externalCode: order.trackingCode ?? null, externalSyncedAt: new Date() },
         omit: { receiptData: true },
       });
-      if (this.telegram.isConfigured(brand)) {
-        void this.telegram
-          .broadcast(
-            brand,
-            `🛒 <b>خرید سرویس جدید</b> · ${escHtml(plan.title)} — ${escHtml(plan.price)}${name ? `\n💳 ${escHtml(name)}` : ''}\n` +
-              `در فروشگاه HMPanel ثبت شد (کد پیگیری <code>${escHtml(order.trackingCode ?? '-')}</code>). تأیید از ربات یا پنل HMPanel.`,
-          )
-          .catch(() => undefined);
-      }
+      // Reviewed here like a renewal (buttons + auto decision); approving it approves the HMPanel order,
+      // which builds the service. HMPanel's own store bot gets the order too.
+      void this.review(row, undefined)
+        .then((review) => this.telegram.renewalReceived(brand, { ...row, review }, { mime, data }))
+        .then((refs) => this.saveTelegramRefs(row.id, refs))
+        .catch(() => undefined);
       return this.toPublic(updated);
     } catch (err) {
       await this.prisma.renewalRequest.delete({ where: { id: row.id } }).catch(() => undefined);
@@ -370,7 +367,6 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
         where: {
           brandId: brand.id,
           status: RenewalStatus.PENDING,
-          externalOrderId: null,
           autoTriedAt: null,
           createdAt: { lt: new Date(now.getTime() - brand.autoDecideMinutes * 60_000) },
         },
@@ -540,6 +536,7 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
         // A new service finishes when HMPanel hands over its link (picked up by the sync).
         if (row.kind === 'purchase') {
           await this.prisma.renewalRequest.update({ where: { id: row.id }, data: { applyMessage: 'Approved in HMPanel — waiting for delivery' } });
+          void this.notifyTeam(row, { approved: true, by: opts.by, appliedOnPanel: null, note: 'HMPanel در حال ساخت سرویس است؛ لینک خودکار به اپ خریدار می‌رسد' }).catch(() => undefined);
           void this.syncExternal({ ids: [row.id] }).catch(() => undefined);
           return { ok: true, appliedOnPanel: null, applyMessage: 'Waiting for HMPanel to deliver the service', notified: 0 };
         }
@@ -574,7 +571,7 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
       },
     });
     // Every decision (button, panel, timer, HMPanel) closes the receipt for all admins.
-    void this.notifyTeam(row, { approved: true, by: opts.by, appliedOnPanel, note: opts.note });
+    void this.notifyTeam(row, { approved: true, by: opts.by, appliedOnPanel, note: opts.note }).catch(() => undefined);
     const push = await this.push.notifySubscription(
       row.brandId,
       row.subId,
@@ -617,7 +614,7 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
         decidedById: opts.userId,
       },
     });
-    void this.notifyTeam(row, { approved: false, by: opts.by, appliedOnPanel: null, note: opts.note });
+    void this.notifyTeam(row, { approved: false, by: opts.by, appliedOnPanel: null, note: opts.note }).catch(() => undefined);
     const push = await this.push.notifySubscription(
       row.brandId,
       row.subId,

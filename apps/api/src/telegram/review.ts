@@ -5,6 +5,8 @@ const GB = 1024 ** 3;
 
 export interface RenewalNotice {
   id: string;
+  /** 'purchase' = a new service bought in the app; anything else is a renewal. */
+  kind?: string;
   displayName: string | null;
   subId: string;
   planTitle: string;
@@ -97,6 +99,9 @@ const gbText = (bytes: number) => `${+(bytes / GB).toFixed(bytes >= 10 * GB ? 0 
 
 function termsLine(r: RenewalNotice) {
   const users = r.users ? ` · ${r.users === 1 ? 'تک‌کاربره' : `${r.users} کاربره`}` : '';
+  if (r.kind === 'purchase') {
+    return `${r.days > 0 ? `${r.days} روز` : 'بدون محدودیت زمان'} · ${r.gb > 0 ? `${r.gb} گیگ` : 'نامحدود'}${users}`;
+  }
   const volume =
     r.mode === 'reset' ? (r.gb > 0 ? `${r.gb} گیگ (مصرف صفر می‌شود)` : 'نامحدود') : r.gb > 0 ? `+${r.gb} گیگ` : 'بدون حجم اضافه';
   return `${r.days > 0 ? `+${r.days} روز` : 'بدون تغییر زمان'} · ${volume}${users}`;
@@ -136,7 +141,7 @@ function afterLine(r: RenewalNotice, c: NonNullable<ReviewInfo['current']>) {
 export function receiptCaption(appName: string, r: RenewalNotice): string {
   const v = r.review;
   const lines: Array<string | null> = [
-    `🧾 <b>رسید تمدید</b> · ${esc(appName)}`,
+    r.kind === 'purchase' ? `🛒 <b>خرید سرویس جدید</b> · ${esc(appName)}` : `🧾 <b>رسید تمدید</b> · ${esc(appName)}`,
     '',
     `👤 <b>${esc(r.displayName || r.subId)}</b>`,
     v?.panel ? `🖥 ${esc(v.panel.name)} · ${PANEL_LABEL[v.panel.type] ?? v.panel.type}` : null,
@@ -158,11 +163,14 @@ export function receiptCaption(appName: string, r: RenewalNotice): string {
     } else {
       checks.push('✅ تصویر رسید تکراری نیست');
     }
-    if (v.canApply === false) checks.push('⚠️ اکانت روی پنل پیدا نشد؛ «تمدید خودکار» دوباره جست‌وجو می‌کند، وگرنه دستی تمدید کنید');
+    if (r.kind === 'purchase') checks.push('🆕 با تأیید، HMPanel سرویس را از محصول فروشگاه می‌سازد و لینکش خودکار به اپ خریدار می‌رسد');
+    else if (v.canApply === false) checks.push('⚠️ اکانت روی پنل پیدا نشد؛ «تمدید خودکار» دوباره جست‌وجو می‌کند، وگرنه دستی تمدید کنید');
     else if (v.canApply) checks.push('✅ اکانت روی پنل پیدا شد؛ تمدید خودکار آماده است');
     if (v.storeRefused) checks.push(`⚠️ فروشگاه HMPanel این تمدید را نپذیرفت: <i>${esc(v.storeRefused.slice(0, 160))}</i> — برای همین اینجا آمد`);
     if (v.pendingCount && v.pendingCount > 1) checks.push(`⚠️ ${v.pendingCount} درخواست باز برای این اشتراک`);
-    if (v.approvedBefore) {
+    if (r.kind === 'purchase') {
+      /* a new service has no history */
+    } else if (v.approvedBefore) {
       const last = v.lastApprovedAt ? ` · آخرین: ${faDate(v.lastApprovedAt)}` : '';
       checks.push(`🔁 ${v.approvedBefore} تمدید قبلی${last}`);
     } else {

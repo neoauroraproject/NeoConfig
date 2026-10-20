@@ -15,6 +15,7 @@ function setup(action: 'approve' | 'reject', renewOk = true) {
     },
     renewalRequest: {
       findMany: vi.fn().mockResolvedValue([row]),
+      findUnique: vi.fn().mockResolvedValue(null),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         updates.push(data);
@@ -34,7 +35,7 @@ describe('auto decision', () => {
   it('approves overdue receipts and renews on the panel, marked as automatic', async () => {
     const { svc, prisma, gateway, updates } = setup('approve');
     await svc.autoDecide(new Date());
-    expect(prisma.renewalRequest.findMany.mock.calls[0][0].where).toMatchObject({ status: 'PENDING', externalOrderId: null, autoTriedAt: null });
+    expect(prisma.renewalRequest.findMany.mock.calls[0][0].where).toMatchObject({ status: 'PENDING', autoTriedAt: null });
     expect(gateway.renew).toHaveBeenCalled();
     expect(updates.at(-1)).toMatchObject({ status: 'APPROVED', autoDecided: true, appliedOnPanel: true });
   });

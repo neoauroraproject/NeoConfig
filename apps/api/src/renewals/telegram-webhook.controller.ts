@@ -92,7 +92,13 @@ export class TelegramWebhookController {
       await this.telegram.answerCallback(
         brand,
         cb.id,
-        !approve ? 'رد شد' : applied ? 'تأیید و روی پنل تمدید شد ✅' : 'تأیید شد ✅',
+        !approve
+          ? 'رد شد'
+          : applied
+            ? 'تأیید و روی پنل تمدید شد ✅'
+            : 'applyMessage' in res && /deliver/i.test(String(res.applyMessage))
+              ? 'تأیید شد ✅ HMPanel سرویس را می‌سازد و لینکش به اپ خریدار می‌رسد'
+              : 'تأیید شد ✅',
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed';

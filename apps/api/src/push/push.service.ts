@@ -19,6 +19,7 @@ export interface PushPayload {
 export class PushService implements OnModuleInit {
   private readonly logger = new Logger(PushService.name);
   private publicKey = '';
+  private prunedAt = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -105,20 +106,59 @@ export class PushService implements OnModuleInit {
     const targets = devices.filter(
       (d) => d.endpoint === extraEndpoint || d.subIds.split(',').includes(subId),
     );
-    return this.sendMany(targets, payload);
+    return this.sendMany(brandId, targets, payload, subId);
   }
 
   async broadcast(brandId: string, payload: PushPayload) {
     const devices = await this.prisma.pushDevice.findMany({ where: { brandId } });
-    return this.sendMany(devices, payload);
+    return this.sendMany(brandId, devices, payload, null);
+  }
+
+  /** Recent sends for the admin, newest first. */
+  async logs(brandId: string, limit = 50) {
+    const rows = await this.prisma.pushLog.findMany({
+      where: { brandId },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(Math.max(limit, 1), 200),
+    });
+    return rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() }));
+  }
+
+  /** The service worker reports a notification it showed or that was tapped; never more than were sent. */
+  async track(logId: string, event: 'delivered' | 'opened') {
+    await this.prisma.pushLog
+      .updateMany({
+        where: { id: logId, [event]: { lt: this.prisma.pushLog.fields.total } },
+        data: { [event]: { increment: 1 } },
+      })
+      .catch(() => undefined);
+    return { ok: true };
   }
 
   private async sendMany(
+    brandId: string,
     devices: Array<{ id: string; endpoint: string; p256dh: string; auth: string }>,
     payload: PushPayload,
+    subId: string | null,
   ) {
+    const log = await this.prisma.pushLog
+      .create({
+        data: {
+          brandId,
+          kind: pushKind(payload.tag),
+          subId,
+          title: payload.title.slice(0, 200),
+          body: payload.body.slice(0, 1000),
+          total: devices.length,
+        },
+      })
+      .catch(() => null);
     let sent = 0;
-    const body = JSON.stringify(payload);
+    let expired = 0;
+    let failed = 0;
+    let error: string | null = null;
+    // logId lets the service worker report back that the phone showed it.
+    const body = JSON.stringify(log ? { ...payload, logId: log.id } : payload);
     await Promise.all(
       devices.map(async (d) => {
         try {
@@ -131,15 +171,42 @@ export class PushService implements OnModuleInit {
         } catch (err) {
           const status = (err as { statusCode?: number }).statusCode;
           if (status === 404 || status === 410) {
+            expired += 1;
             await this.prisma.pushDevice.delete({ where: { id: d.id } }).catch(() => undefined);
           } else {
+            failed += 1;
+            error ??= `${status ?? 'network'}: ${(err as Error).message}`.slice(0, 300);
             this.logger.warn(`Push failed (${status ?? 'network'}): ${(err as Error).message}`);
           }
         }
       }),
     );
+    if (log) {
+      await this.prisma.pushLog
+        .update({ where: { id: log.id }, data: { sent, expired, failed, error } })
+        .catch(() => undefined);
+    }
+    void this.prune();
     return { sent, total: devices.length };
   }
+
+  /** Keep 90 days of send history; checked at most hourly. */
+  private async prune() {
+    if (Date.now() - this.prunedAt < 3_600_000) return;
+    this.prunedAt = Date.now();
+    await this.prisma.pushLog
+      .deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 90 * 86_400_000) } } })
+      .catch(() => undefined);
+  }
+}
+
+/** What a send was for, from its notification tag. */
+export function pushKind(tag?: string): string {
+  if (!tag) return 'other';
+  if (tag === 'broadcast') return 'broadcast';
+  if (tag.startsWith('reminder-')) return 'reminder';
+  if (tag.startsWith('renewal-')) return 'renewal';
+  return 'other';
 }
 
 function dedupeBy<T>(items: T[], key: (item: T) => string): T[] {

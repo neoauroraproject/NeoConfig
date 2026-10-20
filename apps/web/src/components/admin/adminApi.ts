@@ -60,6 +60,27 @@ export type AdminBrand = {
   createdAt: string;
 };
 
+/** One web push send and how far it got. */
+export type PushLog = {
+  id: string;
+  kind: 'reminder' | 'renewal' | 'broadcast' | 'other';
+  subId: string | null;
+  title: string;
+  body: string;
+  /** Devices targeted */
+  total: number;
+  /** Accepted by the push service */
+  sent: number;
+  /** Shown on the phone */
+  delivered: number;
+  opened: number;
+  /** Device had turned notifications off; removed */
+  expired: number;
+  failed: number;
+  error: string | null;
+  createdAt: string;
+};
+
 export type Panel = {
   id: string;
   name: string;
@@ -253,6 +274,7 @@ export const adminApi = {
     request<HmProduct[]>(`/api/v1/admin/brands/${id}/hmpanel/${panelId}/products`, { token: tk() }),
   removeLogo: (id: string, variant: 'light' | 'dark' = 'light') =>
     request<AdminBrand>(`/api/v1/admin/brands/${id}/logo?variant=${variant}`, { method: 'DELETE', token: tk() }),
+  pushLogs: (id: string, limit = 100) => request<PushLog[]>(`/api/v1/admin/brands/${id}/push/logs?limit=${limit}`, { token: tk() }),
   broadcast: (id: string, title: string, body: string) =>
     request<{ sent: number; total: number }>(`/api/v1/admin/brands/${id}/push`, {
       method: 'POST',

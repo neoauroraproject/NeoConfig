@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { Throttle } from '@nestjs/throttler';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsIn,
   IsOptional,
   IsString,
   IsUrl,
@@ -46,6 +47,11 @@ class UnsubscribeDto {
   @IsString() @MaxLength(1024) endpoint!: string;
 }
 
+class TrackDto {
+  @IsString() @MaxLength(64) id!: string;
+  @IsIn(['delivered', 'opened']) event!: 'delivered' | 'opened';
+}
+
 class BroadcastDto {
   @IsString() @MaxLength(80) title!: string;
   @IsString() @MaxLength(240) body!: string;
@@ -81,6 +87,22 @@ export class PushController {
   @Post('public/push/unsubscribe')
   unsubscribe(@Body() body: UnsubscribeDto) {
     return this.push.unregister(body.endpoint);
+  }
+
+  /** The service worker: a notification was shown / tapped. */
+  @Post('public/push/track')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  track(@Body() body: TrackDto) {
+    return this.push.track(body.id, body.event);
+  }
+
+  @Get('admin/brands/:id/push/logs')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ORG_ADMIN, Role.SUPER_ADMIN, Role.RESELLER)
+  async logs(@CurrentUser() user: AuthUser, @Param('id') id: string, @Query('limit') limit?: string) {
+    const brand = await this.brands.mustOwn(user, id);
+    return this.push.logs(brand.id, Number(limit) || 50);
   }
 
   @Post('admin/brands/:id/push')

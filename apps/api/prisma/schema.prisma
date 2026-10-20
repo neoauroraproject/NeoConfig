@@ -196,6 +196,7 @@ model Brand {
   @@index([orgId])
   appDevices AppDevice[]
   appSubscriptionAdds AppSubscriptionAdd[]
+  pushLogs PushLog[]
 }
 
 model BrandDomain {
@@ -513,3 +514,30 @@ model AppSubscriptionAdd {
   @@index([brandId, createdAt])
 }
 
+/// One web push send (reminder, renewal result or broadcast) and how it went.
+model PushLog {
+  id        String   @id @default(cuid())
+  brandId   String
+  /// reminder | renewal | broadcast | other
+  kind      String
+  subId     String?
+  title     String
+  body      String
+  /// devices targeted
+  total     Int      @default(0)
+  /// accepted by the push service (Google / Apple / Mozilla)
+  sent      Int      @default(0)
+  /// shown on the phone (the service worker reports back)
+  delivered Int      @default(0)
+  /// tapped
+  opened    Int      @default(0)
+  /// device had unsubscribed; removed
+  expired   Int      @default(0)
+  failed    Int      @default(0)
+  error     String?
+  createdAt DateTime @default(now())
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, createdAt])
+}

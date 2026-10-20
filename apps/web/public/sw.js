@@ -56,6 +56,17 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
+/** Tell the server a notification reached the phone / was tapped (its send history shows it). */
+function track(id, kind) {
+  if (!id) return Promise.resolve();
+  return fetch('/api/v1/public/push/track', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, event: kind }),
+    keepalive: true,
+  }).catch(() => undefined);
+}
+
 self.addEventListener('push', (event) => {
   let data = {};
   try {
@@ -65,14 +76,17 @@ self.addEventListener('push', (event) => {
   }
   const title = data.title || 'NeoConfig';
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body: data.body || '',
-      tag: data.tag,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
-      dir: 'auto',
-      data: { url: data.url || '/' },
-    }),
+    Promise.all([
+      self.registration.showNotification(title, {
+        body: data.body || '',
+        tag: data.tag,
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
+        dir: 'auto',
+        data: { url: data.url || '/', logId: data.logId },
+      }),
+      track(data.logId, 'delivered'),
+    ]),
   );
 });
 
@@ -80,14 +94,17 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const target = new URL(event.notification.data?.url || '/', self.location.origin).href;
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
-      for (const client of list) {
-        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-          client.navigate(target).catch(() => undefined);
-          return client.focus();
+    Promise.all([
+      track(event.notification.data?.logId, 'opened'),
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+        for (const client of list) {
+          if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+            client.navigate(target).catch(() => undefined);
+            return client.focus();
+          }
         }
-      }
-      return self.clients.openWindow(target);
-    }),
+        return self.clients.openWindow(target);
+      }),
+    ]),
   );
 });

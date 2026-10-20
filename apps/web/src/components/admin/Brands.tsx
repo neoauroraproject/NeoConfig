@@ -9,6 +9,7 @@ import { AdminBrand, Member, Panel, adminApi } from './adminApi';
 import { PhonePreview } from './PhonePreview';
 import { HmPanelTab } from './HmPanelTab';
 import { PlansEditor } from './PlansEditor';
+import { PushLogCard } from './PushLogCard';
 import { RemindersCard } from './RemindersCard';
 import { Button, Card, Empty, Field, PageHeader, StatusDot, Toggle, errMsg } from './ui';
 
@@ -1116,6 +1117,7 @@ function NotifyTab({ brand, draft, set }: { brand: AdminBrand; draft: AdminBrand
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [sentCount, setSentCount] = useState(0);
 
   async function send(e: FormEvent) {
     e.preventDefault();
@@ -1126,6 +1128,7 @@ function NotifyTab({ brand, draft, set }: { brand: AdminBrand; draft: AdminBrand
       setResult(`به ${r.sent} از ${r.total} دستگاه ارسال شد.`);
       setTitle('');
       setBody('');
+      setSentCount((n) => n + 1);
     } catch (err) {
       setResult(errMsg(err));
     } finally {
@@ -1156,6 +1159,7 @@ function NotifyTab({ brand, draft, set }: { brand: AdminBrand; draft: AdminBrand
           </div>
         </form>
       </Card>
+      <PushLogCard brandId={brand.id} version={sentCount} />
     </div>
   );
 }

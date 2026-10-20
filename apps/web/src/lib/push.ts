@@ -45,21 +45,66 @@ export function followsOf(accounts: Array<{ id: string; url: string }>): PushFol
   return accounts.map((a) => ({ subId: a.id, url: a.url }));
 }
 
-/** Ask permission (must run from a tap), subscribe and tell the server which subscriptions to follow. */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function sameKey(a: ArrayBuffer | null | undefined, b: Uint8Array) {
+  if (!a) return false;
+  const x = new Uint8Array(a);
+  return x.length === b.length && x.every((v, i) => v === b[i]);
+}
+
+/**
+ * Subscribe and register with the server, then ask the server whether it
+ * really has this device. A subscription made with an old key, or one the
+ * server lost, is replaced. Tries a few times with a growing pause.
+ */
+async function subscribeAndConfirm(tenant: string, follows: PushFollow[], attempts = 3): Promise<boolean> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const key = urlBase64ToUint8Array((await publicApi.pushKey()).publicKey);
+      let sub = await reg.pushManager.getSubscription();
+      if (sub && !sameKey(sub.options?.applicationServerKey, key)) {
+        await sub.unsubscribe().catch(() => undefined);
+        sub = null;
+      }
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+      await publicApi.pushSubscribe(tenant, sub.toJSON(), follows);
+      if ((await publicApi.pushCheck(sub.endpoint)).registered) return true;
+      // The server didn't keep it: start over with a fresh subscription.
+      await sub.unsubscribe().catch(() => undefined);
+    } catch {
+      /* network or push service hiccup — try again */
+    }
+    if (i < attempts - 1) await sleep(1000 * 2 ** i);
+  }
+  return false;
+}
+
+/** Ask permission (must run from a tap), subscribe, register and confirm; 'off' means it didn't take. */
 export async function enablePush(tenant: string, follows: PushFollow[]): Promise<PushState> {
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') return permission === 'denied' ? 'denied' : 'off';
-  const reg = await navigator.serviceWorker.ready;
-  let sub = await reg.pushManager.getSubscription();
-  if (!sub) {
-    const { publicKey } = await publicApi.pushKey();
-    sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey),
-    });
-  }
-  await publicApi.pushSubscribe(tenant, sub.toJSON(), follows);
-  return 'on';
+  return (await subscribeAndConfirm(tenant, follows)) ? 'on' : 'off';
+}
+
+/**
+ * On every open: permission already given, so make sure the server can still
+ * reach this device (re-subscribing quietly if not) and knows its accounts.
+ */
+export async function ensurePush(tenant: string, follows: PushFollow[]): Promise<PushState> {
+  const state = await pushState();
+  if (state === 'unsupported' || state === 'ios-needs-install' || state === 'denied') return state;
+  if (Notification.permission !== 'granted') return state;
+  return (await subscribeAndConfirm(tenant, follows, 4)) ? 'on' : 'off';
+}
+
+/** One notification to this device only, to prove they arrive. */
+export async function testPush() {
+  const endpoint = await currentEndpoint();
+  if (!endpoint) return false;
+  const r = await publicApi.pushTest(endpoint).catch(() => null);
+  return Boolean(r?.sent);
 }
 
 /** Keep the server's list of followed subscriptions in sync after adds/removes. */

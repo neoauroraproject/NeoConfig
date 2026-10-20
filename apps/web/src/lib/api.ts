@@ -206,6 +206,18 @@ export const publicApi = {
       body: JSON.stringify({ tenant, subscription, subIds: accounts.map((a) => a.subId), accounts }),
     }),
 
+  pushCheck: (endpoint: string) =>
+    request<{ registered: boolean }>('/api/v1/public/push/check', {
+      method: 'POST',
+      body: JSON.stringify({ endpoint }),
+    }),
+
+  pushTest: (endpoint: string) =>
+    request<{ sent: number; total: number }>('/api/v1/public/push/test', {
+      method: 'POST',
+      body: JSON.stringify({ endpoint }),
+    }),
+
   pushUnsubscribe: (endpoint: string) =>
     request<{ ok: boolean }>('/api/v1/public/push/unsubscribe', {
       method: 'POST',

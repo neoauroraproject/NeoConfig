@@ -63,7 +63,7 @@ export type AdminBrand = {
 /** One web push send and how far it got. */
 export type PushLog = {
   id: string;
-  kind: 'reminder' | 'renewal' | 'broadcast' | 'other';
+  kind: 'reminder' | 'renewal' | 'broadcast' | 'test' | 'other';
   subId: string | null;
   title: string;
   body: string;
@@ -129,6 +129,8 @@ export type Overview = {
 
 export type AdminRenewal = {
   id: string;
+  /** One-tap link that adds the subscription to the customer's app (null until a bought service is delivered). */
+  addLink: string | null;
   brand: { id: string; appName: string; primaryColor: string };
   subId: string;
   displayName: string | null;

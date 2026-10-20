@@ -19,6 +19,7 @@ const KIND_LABEL: Record<PushLog['kind'], string> = {
   reminder: 'یادآوری',
   renewal: 'تمدید و خرید',
   broadcast: 'اطلاعیه',
+  test: 'آزمایشی کاربر',
   other: 'سایر',
 };
 

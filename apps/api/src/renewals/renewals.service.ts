@@ -309,12 +309,16 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
         ...(status ? { status } : {}),
         ...(filter.brandId ? { brandId: filter.brandId } : {}),
       },
-      omit: { receiptData: true, subUrlEnc: true },
+      omit: { receiptData: true },
       include: { brand: { select: { id: true, appName: true, primaryColor: true } } },
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
-    return rows.map((r) => ({
+    const key = this.config.getOrThrow<string>('ENCRYPTION_KEY');
+    const links = await Promise.all(rows.map((r) => this.addLinkOf(r, key)));
+    return rows.map((r, i) => ({
+      /** One tap adds the subscription to the customer's app (send it to them). */
+      addLink: links[i],
       id: r.id,
       brand: r.brand,
       subId: r.subId,
@@ -638,10 +642,15 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
     row: { id: string; brandId: string; displayName: string | null; subId: string; planTitle: string; price?: string },
     decision: { approved: boolean; by: string; appliedOnPanel: boolean | null; note?: string | null },
   ) {
-    const summary = `👤 ${escHtml(row.displayName || row.subId)} · ${escHtml(row.planTitle)}${row.price ? ` — ${escHtml(row.price)}` : ''}`;
+    let summary = `👤 ${escHtml(row.displayName || row.subId)} · ${escHtml(row.planTitle)}${row.price ? ` — ${escHtml(row.price)}` : ''}`;
     const fresh = await this.prisma.renewalRequest
-      .findUnique({ where: { id: row.id }, select: { telegramMsgs: true, hmNotifyJson: true } })
+      .findUnique({
+        where: { id: row.id },
+        select: { brandId: true, kind: true, subUrlEnc: true, resultUrlEnc: true, telegramMsgs: true, hmNotifyJson: true },
+      })
       .catch(() => null);
+    const link = decision.approved && fresh ? await this.addLinkOf(fresh, this.config.getOrThrow<string>('ENCRYPTION_KEY')) : null;
+    if (link) summary += `\n🔗 لینک افزودن به اپ (برای کاربر بفرستید؛ با یک لمس اضافه می‌شود):\n<code>${escHtml(link)}</code>`;
     // The HMPanel bot's copy closes too, whichever side decided.
     void this.closeHmNotice(fresh?.hmNotifyJson, `${decisionLine(decision)}\n${summary}`);
     const brand = await this.prisma.brand.findUnique({ where: { id: row.brandId } }).catch(() => null);
@@ -678,6 +687,16 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
       where: { id: row.id },
       data: { hmNotifyJson: JSON.stringify({ panelId: panel.id, chatId: res.chatId, messageId: res.messageId }) },
     });
+  }
+
+  /** The subscription a request is about (a bought service's own link once delivered), as a one-tap add link. */
+  private async addLinkOf(r: { brandId: string; kind: string; subUrlEnc: string; resultUrlEnc: string | null }, key: string) {
+    try {
+      const url = r.kind === 'purchase' ? (r.resultUrlEnc ? decryptSecret(r.resultUrlEnc, key) : null) : decryptSecret(r.subUrlEnc, key);
+      return await this.brands.addLink(r.brandId, url);
+    } catch {
+      return null;
+    }
   }
 
   private async closeHmNotice(json: string | null | undefined, text: string) {

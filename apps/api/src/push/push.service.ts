@@ -87,6 +87,35 @@ export class PushService implements OnModuleInit {
     return { ok: true };
   }
 
+  /** Does the server know this device (so it can actually notify it)? */
+  async isRegistered(endpoint: string) {
+    const d = await this.prisma.pushDevice.findUnique({ where: { endpoint }, select: { id: true } });
+    return { registered: Boolean(d) };
+  }
+
+  /** One notification to this device only: proof that notifications really arrive. */
+  async testDevice(endpoint: string) {
+    const d = await this.prisma.pushDevice.findUnique({
+      where: { endpoint },
+      include: { brand: { select: { appName: true, defaultLocale: true } } },
+    });
+    if (!d) return { sent: 0, total: 0 };
+    const en = d.brand.defaultLocale === 'en';
+    return this.sendMany(
+      d.brandId,
+      [d],
+      {
+        title: d.brand.appName,
+        body: en
+          ? 'Notifications are on ✓ Reminders and renewal results will show up here.'
+          : 'اعلان‌ها روشن است ✓ یادآوری‌ها و نتیجهٔ تمدید همین‌جا می‌آید.',
+        url: '/',
+        tag: 'test',
+      },
+      null,
+    );
+  }
+
   async unregister(endpoint: string) {
     await this.prisma.pushDevice.deleteMany({ where: { endpoint } });
     return { ok: true };
@@ -204,6 +233,7 @@ export class PushService implements OnModuleInit {
 export function pushKind(tag?: string): string {
   if (!tag) return 'other';
   if (tag === 'broadcast') return 'broadcast';
+  if (tag === 'test') return 'test';
   if (tag.startsWith('reminder-')) return 'reminder';
   if (tag.startsWith('renewal-')) return 'renewal';
   return 'other';

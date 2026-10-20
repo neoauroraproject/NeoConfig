@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, X } from 'lucide-react';
+import { Check, Link2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { relativeTime } from '@/lib/format';
 import { AdminRenewal, adminApi } from './adminApi';
@@ -152,6 +152,7 @@ function RenewalCard({ r, onDone }: { r: AdminRenewal; onDone: () => void }) {
               {r.adminNote ? ` · یادداشت: ${r.adminNote}` : ''}
             </p>
           )}
+          {r.addLink && r.status !== 'REJECTED' && <CopyAddLink link={r.addLink} />}
         </div>
       </div>
 
@@ -216,5 +217,23 @@ function RenewalCard({ r, onDone }: { r: AdminRenewal; onDone: () => void }) {
         </div>
       )}
     </Card>
+  );
+}
+
+/** The customer opens it and the subscription is added to their app (one tap on Android; iPhone copies it over). */
+function CopyAddLink({ link }: { link: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        await navigator.clipboard?.writeText(link).catch(() => undefined);
+        setDone(true);
+        setTimeout(() => setDone(false), 2000);
+      }}
+      className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-[var(--surface-2)] px-2.5 py-1.5 text-xs text-[var(--ink-2)]"
+    >
+      <Link2 className="h-3.5 w-3.5" /> {done ? 'کپی شد ✓' : 'کپی لینک افزودن به اپ (برای کاربر)'}
+    </button>
   );
 }

@@ -18,7 +18,7 @@ import { ApiError, Branding, LookupResponse, PublicRenewal, ThemeId, publicApi }
 import { THEME_CANVAS } from '@/lib/themes';
 import { deviceId } from '@/lib/device';
 import { Locale, isRtl } from '@/lib/i18n';
-import { PushState, disablePush, enablePush, followsOf, isIos, isStandalone, pushState, syncPush } from '@/lib/push';
+import { PushState, disablePush, enablePush, ensurePush, followsOf, isIos, isStandalone, pushState, syncPush, testPush } from '@/lib/push';
 import { demoHistory, demoLookup } from './demo';
 import { Dashboard } from './Dashboard';
 import { Onboarding } from './Onboarding';
@@ -27,7 +27,7 @@ import { Intro } from './Intro';
 import { InAppBanner } from './InAppBanner';
 import { RenewalDetailSheet } from './RenewalDetailSheet';
 import { RenewSheet } from './RenewSheet';
-import { AccountsSheet, InstallIosSheet, MenuSheet, QrSheet } from './Sheets';
+import { AccountsSheet, InstallIosSheet, IosHandoffSheet, MenuSheet, QrSheet } from './Sheets';
 import { AppsSheet, InfoSheet } from './InfoSheets';
 import { SfContext, brandStyle, makeT } from './context';
 
@@ -55,6 +55,10 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
   const [installEvt, setInstallEvt] = useState<BeforeInstallPromptEvent | null>(null);
   const [standalone, setStandalone] = useState(true);
   const [push, setPush] = useState<PushState>('unsupported');
+  const [pushBusy, setPushBusy] = useState(false);
+  // A one-tap add link (…/#add=<subscription>) opened this page.
+  const [linkToAdd, setLinkToAdd] = useState<string | null>(null);
+  const [handoff, setHandoff] = useState<string | null>(null);
   const [showIntro, setShowIntro] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [tracked, setTracked] = useState<TrackedRenewal[]>([]);
@@ -96,6 +100,16 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
       history.replaceState(null, '', location.pathname);
     }
     setTracked(known);
+    // The subscription travels in the #fragment, so it never reached a server; drop it from the address bar.
+    const add = /^#add=(.+)$/.exec(location.hash);
+    if (add) {
+      try {
+        setLinkToAdd(decodeURIComponent(add[1]));
+      } catch {
+        /* malformed link */
+      }
+      history.replaceState(null, '', location.pathname + location.search);
+    }
     setReady(true);
     setStandalone(isStandalone());
     // Anonymous usage count: one «open» per device per day.
@@ -125,8 +139,10 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
       } catch {
         /* storage blocked: skip the intro */
       }
-      // Devices that turned push on before reminders existed never sent their links.
-      if (p === 'on' && !demo) void syncPush(tenant, followsOf(s.accounts));
+      // Permission given: make sure the server can still reach this device (re-subscribes quietly if not).
+      if (!demo && (p === 'on' || (p === 'off' && Notification.permission === 'granted'))) {
+        void ensurePush(tenant, followsOf(s.accounts)).then(setPush).catch(() => undefined);
+      }
     });
     const onBip = (e: Event) => {
       e.preventDefault();
@@ -372,18 +388,53 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
   }
 
   async function togglePush() {
-    if (demo) return;
+    if (demo || pushBusy) return;
+    setPushBusy(true);
     try {
       if (push === 'on') {
         await disablePush();
         setPush('off');
       } else {
-        setPush(await enablePush(tenant, followsOf(state.accounts)));
+        const next = await enablePush(tenant, followsOf(stateRef.current.accounts));
+        setPush(next);
+        if (next === 'on') {
+          toast(t('pushEnabled'));
+          void testPush();
+        } else if (next === 'off') {
+          toast(t('pushFailed'));
+        }
       }
     } catch {
-      toast(t('err_generic'));
+      toast(t('pushFailed'));
+    } finally {
+      setPushBusy(false);
     }
   }
+
+  /** After the user allowed notifications in settings: look again and finish turning them on. */
+  async function recheckPush() {
+    const p = await pushState();
+    setPush(p);
+    if (p === 'off' && Notification.permission === 'granted') await togglePush();
+  }
+
+  async function sendTestPush() {
+    toast((await testPush()) ? t('pushTestSent') : t('pushFailed'));
+  }
+
+  // A one-tap add link: add it like a paste. On iPhone Safari, also offer to carry it to the installed app.
+  useEffect(() => {
+    if (!ready || !linkToAdd) return;
+    const url = linkToAdd;
+    setLinkToAdd(null);
+    void (async () => {
+      const before = stateRef.current.accounts.length;
+      await addAccount(url);
+      if (stateRef.current.accounts.length > before) toast(t('addedFromLink'));
+      if (isIos() && !isStandalone()) setHandoff(url);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, linkToAdd]);
 
   // The status bar follows the theme the customer picked.
   useEffect(() => {
@@ -559,7 +610,10 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
           locale={locale}
           onLocale={changeLocale}
           push={push}
+          pushBusy={pushBusy}
           onPushToggle={togglePush}
+          onPushRecheck={recheckPush}
+          onPushTest={sendTestPush}
           theme={theme}
           themes={themes}
           onTheme={changeTheme}
@@ -572,6 +626,11 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
           }
         />
         <InstallIosSheet open={sheet === 'install'} onClose={() => setSheet(null)} />
+        <IosHandoffSheet
+          link={handoff}
+          onCopied={() => toast(t('copied'))}
+          onClose={() => setHandoff(null)}
+        />
 
         {!showIntro && !demo && <InAppBanner />}
 

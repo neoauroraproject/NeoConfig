@@ -97,6 +97,29 @@ export class BrandsService {
 
   // ---------- public ----------
 
+  private addBaseCache = new Map<string, { at: number; base: string | null }>();
+
+  /**
+   * One-tap "add to the app" link: the brand's own address with the
+   * subscription link in the #fragment, which browsers never send to a server.
+   */
+  async addLink(brandId: string, subUrl: string | null | undefined): Promise<string | null> {
+    if (!subUrl || !/^https?:\/\//i.test(subUrl)) return null;
+    const hit = this.addBaseCache.get(brandId);
+    let base = hit && Date.now() - hit.at < 60_000 ? hit.base : undefined;
+    if (base === undefined) {
+      const b = await this.prisma.brand.findUnique({
+        where: { id: brandId },
+        select: { slug: true, isDefault: true, domains: { select: { domain: true, sslOk: true } } },
+      });
+      const app = (this.config.get<string>('APP_URL') || '').replace(/\/+$/, '');
+      const own = b?.domains.find((d) => d.sslOk)?.domain;
+      base = !b ? null : own ? `https://${own}/` : app ? (b.isDefault ? `${app}/` : `${app}/b/${b.slug}`) : null;
+      this.addBaseCache.set(brandId, { at: Date.now(), base });
+    }
+    return base ? `${base}#add=${encodeURIComponent(subUrl)}` : null;
+  }
+
   /**
    * Resolve the storefront for a request: exact custom domain first, then slug,
    * then the organization's default brand.

@@ -159,6 +159,9 @@ export function MenuSheet({
   onLocale,
   push,
   onPushToggle,
+  pushBusy,
+  onPushRecheck,
+  onPushTest,
   theme,
   themes,
   onTheme,
@@ -170,6 +173,9 @@ export function MenuSheet({
   onLocale: (l: Locale) => void;
   push: PushState;
   onPushToggle: () => void;
+  pushBusy?: boolean;
+  onPushRecheck?: () => void;
+  onPushTest?: () => void;
   theme: ThemeId;
   themes: ThemeId[];
   onTheme: (t: ThemeId) => void;
@@ -183,7 +189,7 @@ export function MenuSheet({
     push === 'on'
       ? t('notificationsOn')
       : push === 'denied'
-        ? t('notificationsBlocked')
+        ? t('notificationsBlockedHow')
         : push === 'ios-needs-install'
           ? t('notificationsIos')
           : push === 'unsupported'
@@ -205,12 +211,23 @@ export function MenuSheet({
             <button
               type="button"
               onClick={onPushToggle}
-              className={`h-10 shrink-0 rounded-full px-4 text-sm font-medium ${push === 'on' ? 'bg-surface text-ink' : 'bg-btn text-btn-ink'}`}
+              disabled={pushBusy}
+              className={`h-10 shrink-0 rounded-full px-4 text-sm font-medium disabled:opacity-60 ${push === 'on' ? 'bg-surface text-ink' : 'bg-btn text-btn-ink'}`}
             >
-              {push === 'on' ? t('disable') : t('enable')}
+              {pushBusy ? t('pushEnabling') : push === 'on' ? t('disable') : t('enable')}
+            </button>
+          )}
+          {push === 'denied' && onPushRecheck && (
+            <button type="button" onClick={onPushRecheck} className="h-10 shrink-0 rounded-full bg-surface px-4 text-sm font-medium text-ink">
+              {t('pushRecheck')}
             </button>
           )}
         </div>
+        {push === 'on' && onPushTest && (
+          <button type="button" onClick={onPushTest} className="w-full rounded-3xl bg-surface-2 px-4 py-3 text-start text-sm text-ink-2">
+            🔔 {t('pushTest')}
+          </button>
+        )}
 
         <div className="flex items-center gap-3 rounded-3xl bg-surface-2 p-4">
           <span className="grid h-10 w-10 place-items-center rounded-full bg-surface text-ink-2">
@@ -303,6 +320,28 @@ export function QrSheet({ open, onClose, url }: { open: boolean; onClose: () => 
         {src && <img src={src} alt={t('qr')} className="h-auto w-full" />}
       </div>
       <p className="mx-auto mt-4 max-w-[34ch] text-center text-sm leading-7 text-ink-2">{t('qrHint')}</p>
+    </Sheet>
+  );
+}
+
+/** iPhone opened a one-tap link in Safari; the home-screen app keeps its own data, so carry the link over by hand. */
+export function IosHandoffSheet({ link, onCopied, onClose }: { link: string | null; onCopied: () => void; onClose: () => void }) {
+  const { t } = useSf();
+  return (
+    <Sheet open={Boolean(link)} onClose={onClose} title={t('iosHandoffTitle')} closeLabel={t('close')}>
+      <p className="rounded-3xl bg-surface-2 p-4 text-sm leading-7 text-ink">{t('iosHandoffBody')}</p>
+      <button
+        type="button"
+        onClick={async () => {
+          if (!link) return;
+          await navigator.clipboard?.writeText(link).catch(() => undefined);
+          onCopied();
+          onClose();
+        }}
+        className="mt-4 h-14 w-full rounded-3xl bg-ink text-sm font-medium text-on-ink"
+      >
+        {t('copyLink')}
+      </button>
     </Sheet>
   );
 }

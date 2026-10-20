@@ -84,6 +84,20 @@ export class PushController {
     });
   }
 
+  @Post('public/push/check')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  check(@Body() body: UnsubscribeDto) {
+    return this.push.isRegistered(body.endpoint);
+  }
+
+  @Post('public/push/test')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  test(@Body() body: UnsubscribeDto) {
+    return this.push.testDevice(body.endpoint);
+  }
+
   @Post('public/push/unsubscribe')
   unsubscribe(@Body() body: UnsubscribeDto) {
     return this.push.unregister(body.endpoint);

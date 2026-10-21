@@ -16,6 +16,7 @@ import { PublicModule } from './public/public.module';
 import { PushModule } from './push/push.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { RenewalsModule } from './renewals/renewals.module';
+import { CustomersModule } from './customers/customers.module';
 import { StatsModule } from './stats/stats.module';
 
 @Module({
@@ -37,6 +38,7 @@ import { StatsModule } from './stats/stats.module';
     BrandsModule,
     PushModule,
     RenewalsModule,
+    CustomersModule,
     ServersModule,
     HmPanelModule,
     AdminModule,

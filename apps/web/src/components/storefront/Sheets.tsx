@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, BellOff, Check, Globe, LifeBuoy, Palette, Pencil, Plus, Share, ShoppingBag, Trash2 } from 'lucide-react';
+import { Bell, BellOff, Check, Globe, KeyRound, LifeBuoy, Palette, Pencil, Plus, Share, ShoppingBag, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import type { SavedAccount } from '@/lib/accounts';
@@ -159,6 +159,8 @@ export function MenuSheet({
   onLocale,
   push,
   onPushToggle,
+  username,
+  onAccount,
   pushBusy,
   onPushRecheck,
   onPushTest,
@@ -173,6 +175,9 @@ export function MenuSheet({
   onLocale: (l: Locale) => void;
   push: PushState;
   onPushToggle: () => void;
+  /** Signed-in username, or null; opens the account sheet. */
+  username?: string | null;
+  onAccount?: () => void;
   pushBusy?: boolean;
   onPushRecheck?: () => void;
   onPushTest?: () => void;
@@ -223,6 +228,25 @@ export function MenuSheet({
             </button>
           )}
         </div>
+        {onAccount && (
+          <button type="button" onClick={onAccount} className="flex w-full items-center gap-3 rounded-3xl bg-surface-2 p-4 text-start">
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-surface text-ink-2">
+              <KeyRound className="h-4 w-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-medium text-ink">{t('account')}</span>
+              <span className="block truncate text-xs leading-5 text-ink-2">
+                {username ? (
+                  <>
+                    {t('accountSignedIn')} <span dir="ltr">{username}</span>
+                  </>
+                ) : (
+                  t('accountNone')
+                )}
+              </span>
+            </span>
+          </button>
+        )}
         {push === 'on' && onPushTest && (
           <button type="button" onClick={onPushTest} className="w-full rounded-3xl bg-surface-2 px-4 py-3 text-start text-sm text-ink-2">
             🔔 {t('pushTest')}
@@ -320,6 +344,90 @@ export function QrSheet({ open, onClose, url }: { open: boolean; onClose: () => 
         {src && <img src={src} alt={t('qr')} className="h-auto w-full" />}
       </div>
       <p className="mx-auto mt-4 max-w-[34ch] text-center text-sm leading-7 text-ink-2">{t('qrHint')}</p>
+    </Sheet>
+  );
+}
+
+/** Set a username + password for this device's subscriptions, or manage the signed-in login. */
+export function AccountSheet({
+  open,
+  onClose,
+  username,
+  onRegister,
+  onChangePassword,
+  onLogout,
+}: {
+  open: boolean;
+  onClose: () => void;
+  username: string | null;
+  onRegister: (username: string, password: string) => Promise<boolean>;
+  onChangePassword: (current: string, next: string) => Promise<boolean>;
+  onLogout: () => void;
+}) {
+  const { t } = useSf();
+  const [a, setA] = useState('');
+  const [b, setB] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!open) {
+      setA('');
+      setB('');
+    }
+  }, [open]);
+  const field =
+    'h-14 w-full rounded-3xl bg-surface-2 px-5 text-base text-ink outline-none placeholder:text-ink-3 focus:ring-2 focus:ring-[var(--brand)]';
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!a || !b || busy) return;
+    setBusy(true);
+    const ok = username ? await onChangePassword(a, b) : await onRegister(a.trim(), b);
+    setBusy(false);
+    if (ok) onClose();
+  }
+
+  return (
+    <Sheet open={open} onClose={onClose} title={t('account')} closeLabel={t('close')}>
+      {username && (
+        <p className="mb-3 rounded-3xl bg-surface-2 p-4 text-sm text-ink">
+          {t('accountSignedIn')} <b dir="ltr">{username}</b>
+        </p>
+      )}
+      <form onSubmit={submit} className="space-y-3" noValidate>
+        <p className="text-sm font-medium text-ink">{username ? t('changePassword') : t('accountSet')}</p>
+        <input
+          dir="ltr"
+          className={field}
+          type={username ? 'password' : 'text'}
+          autoComplete={username ? 'current-password' : 'username'}
+          autoCapitalize="none"
+          spellCheck={false}
+          placeholder={username ? t('currentPassword') : `${t('username')} — ${t('usernameHint')}`}
+          value={a}
+          onChange={(e) => setA(e.target.value)}
+        />
+        <input
+          dir="ltr"
+          className={field}
+          type="password"
+          autoComplete="new-password"
+          placeholder={`${username ? t('newPassword') : t('password')} — ${t('passwordHint')}`}
+          value={b}
+          onChange={(e) => setB(e.target.value)}
+        />
+        <button
+          type="submit"
+          disabled={busy || !a || b.length < 6}
+          className="h-14 w-full rounded-3xl bg-ink text-sm font-medium text-on-ink disabled:opacity-40"
+        >
+          {busy ? '…' : username ? t('changePassword') : t('accountSet')}
+        </button>
+      </form>
+      {username && (
+        <button type="button" onClick={onLogout} className="mt-3 h-12 w-full rounded-3xl text-sm font-medium text-[#d4373f]">
+          {t('logout')}
+        </button>
+      )}
     </Sheet>
   );
 }

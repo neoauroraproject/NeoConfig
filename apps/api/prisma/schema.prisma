@@ -197,6 +197,7 @@ model Brand {
   appDevices AppDevice[]
   appSubscriptionAdds AppSubscriptionAdd[]
   pushLogs PushLog[]
+  customers CustomerAccount[]
 }
 
 model BrandDomain {
@@ -371,6 +372,8 @@ model RenewalRequest {
   telegramMsgs     String?
   /// Copy sent to the HMPanel store bot (store/notify): {panelId, chatId, messageId}
   hmNotifyJson     String?
+  /// Customer login of the buyer (purchases): the delivered service joins it
+  customerId       String?
   /// Decided by the brand's timer, not a person
   autoDecided      Boolean   @default(false)
   autoTriedAt      DateTime?
@@ -542,4 +545,44 @@ model PushLog {
   brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
 
   @@index([brandId, createdAt])
+}
+
+/// A storefront customer's own login: username + password carrying their subscription links.
+model CustomerAccount {
+  id           String   @id @default(cuid())
+  brandId      String
+  username     String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  brand    Brand             @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  subs     CustomerSub[]
+  sessions CustomerSession[]
+
+  @@unique([brandId, username])
+}
+
+model CustomerSub {
+  id        String   @id @default(cuid())
+  accountId String
+  subId     String
+  urlEnc    String
+  createdAt DateTime @default(now())
+
+  account CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, subId])
+}
+
+model CustomerSession {
+  id         String   @id @default(cuid())
+  accountId  String
+  tokenHash  String   @unique
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  account CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
 }

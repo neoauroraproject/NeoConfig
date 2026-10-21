@@ -35,6 +35,8 @@ class CreatePurchaseDto {
   @IsOptional() @IsString() @MaxLength(80) payerName?: string;
   @IsOptional() @IsString() @MaxLength(300) payerNote?: string;
   @IsOptional() @IsString() @MaxLength(1024) deviceEndpoint?: string;
+  /** Signed-in customer: the service joins their account (otherwise one is made for them). */
+  @IsOptional() @IsString() @MaxLength(128) accountToken?: string;
 }
 
 class StatusDto {

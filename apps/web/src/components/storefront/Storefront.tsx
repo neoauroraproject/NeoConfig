@@ -27,7 +27,8 @@ import { Intro } from './Intro';
 import { InAppBanner } from './InAppBanner';
 import { RenewalDetailSheet } from './RenewalDetailSheet';
 import { RenewSheet } from './RenewSheet';
-import { AccountsSheet, InstallIosSheet, IosHandoffSheet, MenuSheet, QrSheet } from './Sheets';
+import { AccountSheet, AccountsSheet, InstallIosSheet, IosHandoffSheet, MenuSheet, QrSheet } from './Sheets';
+import { Session, clearSession, loadSession, saveSession } from '@/lib/customer';
 import { AppsSheet, InfoSheet } from './InfoSheets';
 import { SfContext, brandStyle, makeT } from './context';
 
@@ -36,7 +37,7 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
-type SheetName = 'accounts' | 'menu' | 'qr' | 'renew' | 'purchase' | 'install' | 'apps' | 'info' | null;
+type SheetName = 'accounts' | 'menu' | 'qr' | 'renew' | 'purchase' | 'install' | 'apps' | 'info' | 'account' | null;
 
 export function Storefront({ brand, tenant, demo = false }: { brand: Branding; tenant: string; demo?: boolean }) {
   const storeKey = demo ? `demo.${tenant}` : tenant;
@@ -56,6 +57,7 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
   const [standalone, setStandalone] = useState(true);
   const [push, setPush] = useState<PushState>('unsupported');
   const [pushBusy, setPushBusy] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
   // A one-tap add link (…/#add=<subscription>) opened this page.
   const [linkToAdd, setLinkToAdd] = useState<string | null>(null);
   const [handoff, setHandoff] = useState<string | null>(null);
@@ -91,6 +93,7 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
     }
     const s = loadAccounts(storeKey);
     setState(s);
+    stateRef.current = s;
     // A push about a renewal opens its details (and makes sure it is followed).
     const fromPush = new URLSearchParams(location.search).get('renewal');
     const known = loadRenewals(storeKey);
@@ -100,6 +103,9 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
       history.replaceState(null, '', location.pathname);
     }
     setTracked(known);
+    const signedIn = demo ? null : loadSession(storeKey);
+    setSession(signedIn);
+    if (signedIn) void syncAccount(signedIn);
     // The subscription travels in the #fragment, so it never reached a server; drop it from the address bar.
     const add = /^#add=(.+)$/.exec(location.hash);
     if (add) {
@@ -215,6 +221,8 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
 
   const persist = useCallback(
     (next: AccountState) => {
+      // Several adds in a row (a sign-in brings many) must each build on the last one.
+      stateRef.current = next;
       setState(next);
       saveAccounts(storeKey, next);
     },
@@ -357,6 +365,8 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
         persist(next);
         void syncPush(tenant, followsOf(next.accounts));
         if (!demo) trackAdd(id, res.snapshot.displayName);
+        // Signed in: the new link joins the login too.
+        if (session) void syncAccount(session);
       }
       setAdding(false);
     } catch (err) {
@@ -409,6 +419,104 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
     } finally {
       setPushBusy(false);
     }
+  }
+
+  /** Add every link the login carries that this device doesn't have yet. */
+  async function importSubs(subs: Array<{ url: string }>) {
+    let added = 0;
+    for (const s of subs) {
+      if (stateRef.current.accounts.some((a) => a.url === s.url)) continue;
+      try {
+        const res = await lookup(s.url);
+        const url = res.url || s.url;
+        const cur = stateRef.current;
+        const next = upsertAccount(cur, url, res);
+        persist(cur.accounts.length ? { ...next, activeId: cur.activeId } : next);
+        added += 1;
+      } catch {
+        /* a link that stopped working stays in the account; the panel decides */
+      }
+    }
+    if (added) void syncPush(tenant, followsOf(stateRef.current.accounts));
+    return added;
+  }
+
+  /** Signed in: this device's links join the login, and the login's links come here. */
+  async function syncAccount(s: Session) {
+    try {
+      const view = await publicApi.accountSync(
+        tenant,
+        s.token,
+        stateRef.current.accounts.map((a) => ({ subId: a.id, url: a.url })),
+      );
+      await importSubs(view.subscriptions);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        clearSession(storeKey);
+        setSession(null);
+      }
+    }
+  }
+
+  function signIn(view: { username: string; token?: string }) {
+    if (!view.token) return null;
+    const s = { token: view.token, username: view.username };
+    saveSession(storeKey, s);
+    setSession(s);
+    return s;
+  }
+
+  async function login(username: string, password: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const view = await publicApi.accountLogin(tenant, username, password);
+      signIn(view);
+      const added = await importSubs(view.subscriptions);
+      if (!added && !stateRef.current.accounts.length) toast(t('loginEmpty'));
+      if (stateRef.current.accounts.length) setAdding(false);
+    } catch (err) {
+      setError(err instanceof ApiError && err.status === 401 ? t('err_login') : errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function register(username: string, password: string) {
+    try {
+      const view = await publicApi.accountRegister(
+        tenant,
+        username,
+        password,
+        stateRef.current.accounts.map((a) => ({ subId: a.id, url: a.url })),
+      );
+      signIn(view);
+      toast(t('accountCreated'));
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      toast(/taken/i.test(msg) ? t('err_usernameTaken') : /^Username/i.test(msg) ? t('usernameHint') : /^Password/i.test(msg) ? t('passwordHint') : errorText(err));
+      return false;
+    }
+  }
+
+  async function changePassword(current: string, next: string) {
+    if (!session) return false;
+    try {
+      await publicApi.accountPassword(tenant, session.token, current, next);
+      toast(t('passwordChanged'));
+      return true;
+    } catch (err) {
+      toast(err instanceof ApiError && err.status === 401 ? t('err_login') : errorText(err));
+      return false;
+    }
+  }
+
+  function logout() {
+    if (session) void publicApi.accountLogout(tenant, session.token);
+    clearSession(storeKey);
+    setSession(null);
+    setSheet(null);
   }
 
   /** After the user allowed notifications in settings: look again and finish turning them on. */
@@ -514,6 +622,7 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
               busy={busy}
               error={error}
               onSubmit={addAccount}
+              onLogin={demo ? undefined : login}
               canInstall={canInstall}
               onInstall={install}
               onCancel={adding && active ? () => (setAdding(false), setError(null)) : undefined}
@@ -593,7 +702,16 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
             onClose={() => setSheet(null)}
             push={push}
             onEnablePush={togglePush}
-            onSubmitted={(r) => trackNew(r, 'new')}
+            accountToken={session?.token ?? null}
+            onSubmitted={(r) => {
+              // A buyer who wasn't signed in now is, with the login made for them.
+              if (r.account) {
+                const s = signIn({ username: r.account.username, token: r.account.token });
+                // The links already on this device join the new login too.
+                if (s && stateRef.current.accounts.length) void syncAccount(s);
+              }
+              trackNew(r, 'new');
+            }}
           />
         )}
         <RenewalDetailSheet
@@ -610,6 +728,8 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
           locale={locale}
           onLocale={changeLocale}
           push={push}
+          username={session?.username ?? null}
+          onAccount={demo ? undefined : () => setSheet('account')}
           pushBusy={pushBusy}
           onPushToggle={togglePush}
           onPushRecheck={recheckPush}
@@ -626,6 +746,14 @@ export function Storefront({ brand, tenant, demo = false }: { brand: Branding; t
           }
         />
         <InstallIosSheet open={sheet === 'install'} onClose={() => setSheet(null)} />
+        <AccountSheet
+          open={sheet === 'account'}
+          onClose={() => setSheet(null)}
+          username={session?.username ?? null}
+          onRegister={register}
+          onChangePassword={changePassword}
+          onLogout={logout}
+        />
         <IosHandoffSheet
           link={handoff}
           onCopied={() => toast(t('copied'))}

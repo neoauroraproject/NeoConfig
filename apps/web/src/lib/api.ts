@@ -142,6 +142,8 @@ export type PublicRenewal = {
   kind?: 'renewal' | 'purchase';
   /** Purchases: the new subscription link once HMPanel delivered it. */
   subscriptionUrl?: string | null;
+  /** Purchases by someone not signed in: their new login, shown once. */
+  account?: { username: string; password: string; token: string } | null;
   subId: string;
   planTitle: string;
   price: string;
@@ -149,6 +151,13 @@ export type PublicRenewal = {
   adminNote: string | null;
   createdAt: string;
   decidedAt: string | null;
+};
+
+/** A customer login and the subscription links it carries. */
+export type CustomerView = {
+  username: string;
+  subscriptions: Array<{ subId: string; url: string }>;
+  token?: string;
 };
 
 export class ApiError extends Error {
@@ -235,12 +244,43 @@ export const publicApi = {
   }) =>
     request<PublicRenewal>('/api/v1/public/renewals', { method: 'POST', body: JSON.stringify(body) }),
 
-  createPurchase: (body: { tenant: string; planId: string; receipt: string; payerName?: string; payerNote?: string; deviceEndpoint?: string }) =>
+  createPurchase: (body: {
+    tenant: string;
+    planId: string;
+    receipt: string;
+    payerName?: string;
+    payerNote?: string;
+    deviceEndpoint?: string;
+    accountToken?: string;
+  }) =>
     request<PublicRenewal>('/api/v1/public/purchases', { method: 'POST', body: JSON.stringify(body) }),
 
   /** Anonymous usage: this device opened the app or added a subscription. Never throws. */
   track: (body: { tenant: string; deviceId: string; event: 'open' | 'add'; standalone?: boolean; locale?: string; subId?: string; displayName?: string }) =>
     request<{ ok: boolean }>('/api/v1/public/track', { method: 'POST', body: JSON.stringify(body) }).catch(() => ({ ok: false })),
+
+  accountRegister: (tenant: string, username: string, password: string, accounts: Array<{ subId: string; url: string }>) =>
+    request<CustomerView>('/api/v1/public/account/register', {
+      method: 'POST',
+      body: JSON.stringify({ tenant, username, password, accounts }),
+    }),
+
+  accountLogin: (tenant: string, username: string, password: string) =>
+    request<CustomerView>('/api/v1/public/account/login', { method: 'POST', body: JSON.stringify({ tenant, username, password }) }),
+
+  accountSync: (tenant: string, token: string, accounts: Array<{ subId: string; url: string }>) =>
+    request<CustomerView>('/api/v1/public/account/sync', { method: 'POST', body: JSON.stringify({ tenant, token, accounts }) }),
+
+  accountPassword: (tenant: string, token: string, current: string, next: string) =>
+    request<{ ok: boolean }>('/api/v1/public/account/password', {
+      method: 'POST',
+      body: JSON.stringify({ tenant, token, current, next }),
+    }),
+
+  accountLogout: (tenant: string, token: string) =>
+    request<{ ok: boolean }>('/api/v1/public/account/logout', { method: 'POST', body: JSON.stringify({ tenant, token }) }).catch(
+      () => ({ ok: false }),
+    ),
 
   renewalStatus: (ids: string[]) =>
     request<PublicRenewal[]>('/api/v1/public/renewals/status', {

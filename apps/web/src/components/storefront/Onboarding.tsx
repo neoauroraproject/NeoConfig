@@ -11,15 +11,20 @@ type Props = {
   busy: boolean;
   error: string | null;
   onSubmit: (url: string) => void;
+  /** Sign in with a customer login instead of a link. */
+  onLogin?: (username: string, password: string) => void;
   canInstall: boolean;
   onInstall: () => void;
   onCancel?: () => void;
   onBuy?: () => void;
 };
 
-export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCancel, onBuy }: Props) {
+export function Onboarding({ busy, error, onSubmit, onLogin, canInstall, onInstall, onCancel, onBuy }: Props) {
   const { brand, t, locale } = useSf();
   const [url, setUrl] = useState('');
+  const [mode, setMode] = useState<'link' | 'login'>('link');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [canPaste, setCanPaste] = useState(false);
   const [pasteHint, setPasteHint] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -106,6 +111,49 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
           <p className="mt-4 max-w-[30ch] text-sm leading-7 text-ink-2">{own.onboardBody || t('onboardBody')}</p>
         </motion.div>
 
+        {mode === 'login' && onLogin ? (
+          <form
+            className="mt-8 space-y-3"
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (username.trim() && password && !busy) onLogin(username.trim(), password);
+            }}
+          >
+            <input
+              dir="ltr"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              aria-label={t('username')}
+              placeholder={t('username')}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="h-14 w-full rounded-4xl bg-surface-2 px-5 text-base text-ink shadow-raise-sm outline-none placeholder:text-ink-3 focus:ring-2 focus:ring-[var(--brand)]"
+            />
+            <input
+              dir="ltr"
+              type="password"
+              autoComplete="current-password"
+              aria-label={t('password')}
+              placeholder={t('password')}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="h-14 w-full rounded-4xl bg-surface-2 px-5 text-base text-ink shadow-raise-sm outline-none placeholder:text-ink-3 focus:ring-2 focus:ring-[var(--brand)]"
+            />
+            <button
+              type="submit"
+              disabled={busy || !username.trim() || !password}
+              className="flex h-14 w-full items-center justify-center gap-2 rounded-4xl bg-btn text-sm font-medium text-btn-ink shadow-raise-sm disabled:opacity-40"
+            >
+              {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : t('login')}
+            </button>
+            <p role="alert" className="min-h-[1.5rem] text-[13px] text-[#d4373f]">
+              {error}
+            </p>
+          </form>
+        ) : (
         <form onSubmit={submit} className="mt-8" noValidate>
           <label htmlFor="sub-url" className="mb-2 block text-[13px] font-medium text-ink-2">
             {t('linkLabel')}
@@ -163,6 +211,16 @@ export function Onboarding({ busy, error, onSubmit, canInstall, onInstall, onCan
             {error}
           </p>
         </form>
+        )}
+        {onLogin && (
+          <button
+            type="button"
+            onClick={() => setMode((m) => (m === 'link' ? 'login' : 'link'))}
+            className="mb-2 flex h-11 w-full items-center justify-center rounded-3xl text-sm font-medium text-brand"
+          >
+            {mode === 'link' ? t('loginWithPassword') : t('loginWithLink')}
+          </button>
+        )}
         {onBuy && (
           <button
             type="button"

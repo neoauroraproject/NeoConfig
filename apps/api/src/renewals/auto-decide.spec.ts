@@ -27,7 +27,7 @@ function setup(action: 'approve' | 'reject', renewOk = true) {
   const gateway = { renew: vi.fn().mockResolvedValue({ ok: renewOk, message: renewOk ? 'Renewed' : 'offline' }) };
   const push = { notifySubscription: vi.fn().mockResolvedValue({ sent: 1 }) };
   const audit = { log: vi.fn() };
-  const svc = new RenewalsService(prisma as never, {} as never, {} as never, {} as never, gateway as never, push as never, audit as never, { isConfigured: () => false } as never);
+  const svc = new RenewalsService(prisma as never, {} as never, {} as never, {} as never, gateway as never, push as never, audit as never, { isConfigured: () => false } as never, {} as never);
   return { svc, prisma, gateway, updates };
 }
 

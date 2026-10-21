@@ -18,6 +18,7 @@ export function RenewSheet({
   onClose,
   subUrl,
   onSubmitted,
+  accountToken,
   push,
   onEnablePush,
   serviceKind,
@@ -37,6 +38,8 @@ export function RenewSheet({
   subUrl?: string;
   serviceKind?: 'xui' | 'pasarguard' | null;
   onSubmitted: (r: PublicRenewal) => void;
+  /** Signed-in customer login (purchases join it). */
+  accountToken?: string | null;
   push: PushState;
   onEnablePush: () => void;
 }) {
@@ -50,6 +53,7 @@ export function RenewSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState<string | null>(null);
+  const [newLogin, setNewLogin] = useState<{ username: string; password: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // Plans for this kind of service only (a 3x-ui plan cannot renew a PasarGuard user).
   const purchase = mode === 'purchase';
@@ -108,7 +112,10 @@ export function RenewSheet({
         payerNote: payerNote.trim() || undefined,
         deviceEndpoint: await currentEndpoint(),
       };
-      const r = purchase ? await publicApi.createPurchase(common) : await publicApi.createRenewal({ ...common, url: subUrl ?? '' });
+      const r = purchase
+        ? await publicApi.createPurchase({ ...common, accountToken: accountToken ?? undefined })
+        : await publicApi.createRenewal({ ...common, url: subUrl ?? '' });
+      setNewLogin(r.account ? { username: r.account.username, password: r.account.password } : null);
       onSubmitted(r);
       setStep('sent');
     } catch (err) {
@@ -363,6 +370,30 @@ export function RenewSheet({
           </motion.span>
           <h3 className="mt-5 text-lg font-semibold text-ink">{t('sentTitle')}</h3>
           <p className="mx-auto mt-2 max-w-[32ch] text-sm leading-7 text-ink-2">{purchase ? t('purchaseSent') : t('sentBody')}</p>
+          {newLogin && (
+            <div className="mt-5 rounded-3xl bg-surface-2 p-4 text-start">
+              <p className="text-sm font-medium text-ink">{t('purchaseAccountTitle')}</p>
+              <dl dir="ltr" className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+                <dt className="text-ink-3">{t('username')}</dt>
+                <dd className="select-all font-medium text-ink">{newLogin.username}</dd>
+                <dt className="text-ink-3">{t('password')}</dt>
+                <dd className="select-all font-medium text-ink">{newLogin.password}</dd>
+              </dl>
+              <p className="mt-3 text-xs leading-6 text-ink-2">{t('purchaseAccountBody')}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard
+                    ?.writeText(`${t('username')}: ${newLogin.username}\n${t('password')}: ${newLogin.password}`)
+                    .then(() => toast(t('copied')))
+                    .catch(() => undefined);
+                }}
+                className="mt-3 h-11 w-full rounded-3xl bg-surface text-sm font-medium text-ink"
+              >
+                {t('copyCredentials')}
+              </button>
+            </div>
+          )}
           {push === 'off' && (
             <button
               type="button"

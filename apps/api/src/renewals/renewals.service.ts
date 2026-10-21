@@ -11,7 +11,8 @@ import { decryptSecret, encryptSecret } from '../common/crypto/secret.crypto';
 import { PanelGatewayService } from '../panels/panel-gateway.service';
 import { describeTerms, normalizeTerms } from '../panels/renewal-terms';
 import { PrismaService } from '../prisma/prisma.service';
-import { PublicService } from '../public/public.service';
+import { CustomersService } from '../customers/customers.service';
+import { extractSubId, PublicService } from '../public/public.service';
 import { PushService } from '../push/push.service';
 import { fill, parseReminderSettings } from '../push/reminder-settings';
 import { ReviewInfo, SentReceipt, TelegramService } from '../telegram/telegram.service';
@@ -37,6 +38,7 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
     private readonly push: PushService,
     private readonly audit: AuditService,
     private readonly telegram: TelegramService,
+    private readonly customers: CustomersService,
   ) {}
 
   /** HMPanel store orders are decided over there; follow them every minute. */
@@ -207,6 +209,7 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
     payerName?: string;
     payerNote?: string;
     deviceEndpoint?: string;
+    accountToken?: string;
   }) {
     const brand = await this.brands.resolve(input.tenant);
     if (!brand?.purchaseEnabled || !brand.renewalPanelId || !brand.renewalEnabled) {
@@ -268,13 +271,19 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
         data: { externalOrderId: order.orderId ?? order.id ?? null, externalCode: order.trackingCode ?? null, externalSyncedAt: new Date() },
         omit: { receiptData: true },
       });
+      // The buyer's login: the one they are signed in to, or a new one with a starting password to show them.
+      const buyer = await this.customers.forPurchase(brand, input.accountToken, name).catch((err) => {
+        this.logger.warn(`No customer account for purchase ${row.id}: ${err instanceof Error ? err.message : err}`);
+        return null;
+      });
+      if (buyer) await this.prisma.renewalRequest.update({ where: { id: row.id }, data: { customerId: buyer.id } });
       // Reviewed here like a renewal (buttons + auto decision); approving it approves the HMPanel order,
       // which builds the service. HMPanel's own store bot gets the order too.
       void this.review(row, undefined)
         .then((review) => this.telegram.renewalReceived(brand, { ...row, review }, { mime, data }))
         .then((refs) => this.saveTelegramRefs(row.id, refs))
         .catch(() => undefined);
-      return this.toPublic(updated);
+      return { ...this.toPublic(updated), account: buyer?.credentials ?? null };
     } catch (err) {
       await this.prisma.renewalRequest.delete({ where: { id: row.id } }).catch(() => undefined);
       throw new BadRequestException(hmError(err));
@@ -808,6 +817,12 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
               if (!order.subscriptionUrl) continue; // approved, still being built
               const key = this.config.getOrThrow<string>('ENCRYPTION_KEY');
               await this.prisma.renewalRequest.update({ where: { id: row.id }, data: { resultUrlEnc: encryptSecret(order.subscriptionUrl, key) } });
+              // Into the buyer's login too, so every device they sign in on gets the new service.
+              if (row.customerId) {
+                await this.customers
+                  .attach(row.customerId, extractSubId(order.subscriptionUrl) ?? row.id, order.subscriptionUrl)
+                  .catch(() => undefined);
+              }
             }
             await this.decideApprove(row, { apply: false, by: 'HMPanel', userId: null, telegramOrigin: false, externalDone: true });
           } else if (HM_ORDER_REFUSED.has(order.status)) {

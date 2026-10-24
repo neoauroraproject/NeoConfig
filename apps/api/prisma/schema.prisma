@@ -120,6 +120,9 @@ model Brand {
   theme           String  @default("mist")
   /// local = receipts reviewed in NeoConfig; hmpanel = sent to the HMPanel store (its bot approves)
   renewalVia      String  @default("local")
+  /// Only subscriptions found on this brand's own panels can be added (no reading the link itself).
+  /// Always on for brands owned by a reseller.
+  strictLookup    Boolean @default(false)
   /// HMPanel connection used for the store, cards and products
   renewalPanelId  String?
   /// Show customers the HMPanel store card (live) instead of the typed one

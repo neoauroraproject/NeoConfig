@@ -3,6 +3,8 @@ import { BrandCopy, RenewalPlan, ThemeId, request } from '@/lib/api';
 export type Role = 'SUPER_ADMIN' | 'ORG_ADMIN' | 'RESELLER' | 'USER';
 
 export type AdminBrand = {
+  /** Only subscriptions on this brand's own panels (always on for a reseller's brand). */
+  strictLookup?: boolean;
   id: string;
   slug: string;
   appName: string;

@@ -60,7 +60,7 @@ export function RenewSheet({
   const plans = (renewal?.plans ?? []).filter((p) =>
     purchase
       ? Boolean(p.productId)
-      : (!p.service || !serviceKind || p.service === serviceKind) &&
+      : (!serviceKind || !planKind(p) || planKind(p) === serviceKind) &&
         // Plans tied to a panel only show for subscriptions on that panel.
         (!p.panelId || !panelId || p.panelId === panelId) &&
         (!p.sourcePanelId || !sourcePanelRef || p.sourcePanelId === sourcePanelRef) &&
@@ -435,4 +435,13 @@ async function compressImage(file: File): Promise<string> {
   canvas.height = Math.round(bitmap.height * scale);
   canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL('image/jpeg', 0.82);
+}
+
+/**
+ * Which kind of service a plan renews. A store product on one of HMPanel's own
+ * (3x-ui) panels is a 3x-ui plan even when it wasn't tagged, so it never shows
+ * for a PasarGuard service.
+ */
+export function planKind(p: Pick<RenewalPlan, 'service' | 'sourcePanelId'>): 'xui' | 'pasarguard' | undefined {
+  return p.service ?? (p.sourcePanelId ? 'xui' : undefined);
 }

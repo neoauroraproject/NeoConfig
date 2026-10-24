@@ -3,8 +3,8 @@ import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { PanelConnection } from '@prisma/client';
 import { decryptSecret } from '../common/crypto/secret.crypto';
-import { HmPanelClientService, normalizeHmPanelClient } from '../integrations/hmpanel/hmpanel.client';
-import { PasarGuardClientService } from '../integrations/pasarguard/pasarguard.client';
+import { HmPanelClientService, normalizeHmExternalClient, normalizeHmPanelClient } from '../integrations/hmpanel/hmpanel.client';
+import { PasarGuardClientService, decodeSubscriptionRef } from '../integrations/pasarguard/pasarguard.client';
 import { NormalizedSubscription } from '../integrations/xui/types';
 import { XuiClientService } from '../integrations/xui/xui.client';
 import { RenewalTerms } from './renewal-terms';
@@ -85,7 +85,7 @@ export class PanelGatewayService {
       if (row.type === 'hmpanel') {
         if (!subId) return null;
         const c = await this.hmpanel.lookup(cfg, subId);
-        if (!c) return null;
+        if (!c) return this.findHmExternal(row, cfg, subUrl);
         return {
           panelId: row.id,
           panelType: 'hmpanel',
@@ -158,6 +158,34 @@ export class PanelGatewayService {
     }
   }
 
+  /**
+   * A PasarGuard link on an HMPanel connection: found only if it is one of
+   * this admin's PasarGuard users in HMPanel (external panels), so a reseller
+   * can't add or renew anyone else's.
+   */
+  private async findHmExternal(row: PanelConnection, cfg: ReturnType<PanelGatewayService['creds']>, subUrl: string): Promise<FoundAccount | null> {
+    const ref = decodeSubscriptionRef(subUrl);
+    if (!ref) return null;
+    // v3 tokens carry only the user id; PasarGuard's own public /info names the user.
+    const username = ref.username ?? (await this.pasarguard.fetchPublicInfo(subUrl).catch(() => null))?.username;
+    if (!username) return null;
+    const c = await this.hmpanel.externalClient(cfg, 'pasarguard', username).catch(() => null);
+    if (!c) return null;
+    return {
+      panelId: row.id,
+      panelType: 'hmpanel',
+      clientRef: `${EXTERNAL_PG}${c.username}`,
+      displayName: c.username,
+      snapshot: normalizeHmExternalClient(c),
+      online: typeof c.online === 'boolean' ? c.online : null,
+      lastOnlineAt: null,
+      renewable: true,
+      deviceLimit: null,
+      devicesOnline: null,
+      serviceKind: 'pasarguard',
+    };
+  }
+
   /** HMPanel's premium store for this connection (cards, products, orders). */
   hmStore(row: PanelConnection) {
     if (row.type !== 'hmpanel') throw new Error('Not an HMPanel connection');
@@ -197,7 +225,11 @@ export class PanelGatewayService {
   ): Promise<{ ok: boolean; message: string }> {
     const cfg = this.creds(row);
     try {
-      if (row.type === 'hmpanel') return await this.hmpanel.renew(cfg, clientRef, plan);
+      if (row.type === 'hmpanel') {
+        return clientRef.startsWith(EXTERNAL_PG)
+          ? await this.hmpanel.renewExternal(cfg, 'pasarguard', clientRef.slice(EXTERNAL_PG.length), plan)
+          : await this.hmpanel.renew(cfg, clientRef, plan);
+      }
       return row.type === 'pasarguard'
         ? await this.pasarguard.renew(cfg, clientRef, plan)
         : await this.xui.renewBySubId(cfg, clientRef, plan);
@@ -206,6 +238,9 @@ export class PanelGatewayService {
     }
   }
 }
+
+/** clientRef prefix for an HMPanel admin's PasarGuard user (external panels). */
+export const EXTERNAL_PG = 'pg:';
 
 /** HMPanel serves 3x-ui clients and external PasarGuard/Eylan users; plans differ per kind. */
 function hmServiceKind(c: { panel?: { type?: string | null } | null }): 'xui' | 'pasarguard' | null {

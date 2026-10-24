@@ -71,6 +71,7 @@ export type BrandInput = Partial<Record<(typeof EDITABLE)[number], string | bool
   active?: boolean;
   isDefault?: boolean;
   ownerId?: string | null;
+  strictLookup?: boolean;
   plans?: PlanInput[];
   panelIds?: string[];
   themeChoices?: string[];
@@ -287,6 +288,7 @@ export class BrandsService {
       }
       if (input.active !== undefined) data.active = Boolean(input.active);
       if (input.ownerId !== undefined) data.ownerId = await this.validOwner(brand.orgId, input.ownerId);
+      if (input.strictLookup !== undefined) data.strictLookup = Boolean(input.strictLookup);
       if (input.panelIds) {
         data.panels = { set: await this.validPanels(brand.orgId, input.panelIds) } as never;
       }
@@ -761,6 +763,7 @@ export class BrandsService {
       telegramApiBase: r.telegramApiBase,
       telegramProxy: r.telegramProxy,
       panelIds: r.panels.map((p) => p.id),
+      strictLookup: r.strictLookup,
       owner: r.owner ?? null,
       domains: r.domains.map((d) => ({
         id: d.id,

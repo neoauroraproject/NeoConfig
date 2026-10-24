@@ -233,6 +233,8 @@ export function productService(p: HmProduct): 'xui' | 'pasarguard' | undefined {
   const id = (p.providerId || '').toLowerCase();
   if (id.includes('pasarguard') || id.includes('marzban')) return 'pasarguard';
   if (id.includes('xui') || id.includes('3x')) return 'xui';
+  // No external provider: built on one of HMPanel's own (3x-ui) panels.
+  if (!id && p.panel) return 'xui';
   return undefined;
 }
 

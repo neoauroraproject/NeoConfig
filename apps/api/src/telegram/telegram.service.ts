@@ -121,26 +121,62 @@ export class TelegramService {
    * Points the bot's webhook at this server so button taps and commands reach us.
    * Telegram only calls HTTPS URLs; on plain-HTTP installs buttons stay inactive.
    */
+  /**
+   * Telegram through a proxy or relay is one-way: we can reach it, it can't
+   * reach our webhook. Those bots fetch their updates instead (TelegramPoller).
+   */
+  usesPolling(t: TelegramTarget) {
+    return Boolean(
+      t.telegramProxy || t.telegramApiBase || this.config.get<string>('TELEGRAM_PROXY') || this.config.get<string>('TELEGRAM_API_BASE'),
+    );
+  }
+
+  /** getUpdates is refused while a webhook is set. */
+  async clearWebhook(t: TelegramTarget) {
+    return this.api(t, 'deleteWebhook', { drop_pending_updates: false });
+  }
+
+  /** Long-poll for updates (button presses, commands) through the same proxy / relay as everything else. */
+  async getUpdates(t: TelegramTarget, offset: number, waitSec = 20) {
+    const res = await this.api(
+      t,
+      'getUpdates',
+      { offset, timeout: waitSec, allowed_updates: ['callback_query', 'message'] },
+      (waitSec + 10) * 1000,
+    );
+    return { ok: res.ok, error: res.error, updates: (Array.isArray(res.result) ? res.result : []) as Array<{ update_id: number } & Record<string, unknown>> };
+  }
+
   async registerWebhook(t: TelegramTarget & { id: string; telegramWebhookSecret: string | null }) {
     const app = (this.config.get<string>('APP_URL') || '').replace(/\/+$/, '');
     if (!t.telegramBotTokenEnc || !t.telegramWebhookSecret) return { ok: false, message: 'Telegram is not configured' };
+    if (this.usesPolling(t)) {
+      // No webhook (Telegram would never reach it); the poller fetches updates. getUpdates needs it removed.
+      const res = await this.api(t, 'deleteWebhook', { drop_pending_updates: false });
+      if (res.ok) await this.setCommands(t);
+      return res.ok
+        ? { ok: true, message: 'Buttons active (fetched through the proxy / relay)' }
+        : { ok: false, message: res.error };
+    }
     if (!app.startsWith('https://')) return { ok: false, message: 'Buttons need the site on HTTPS (APP_URL)' };
     const res = await this.api(t, 'setWebhook', {
       url: `${app}/api/v1/telegram/webhook/${t.id}`,
       secret_token: t.telegramWebhookSecret,
       allowed_updates: ['callback_query', 'message'],
     });
-    if (res.ok) {
-      await this.api(t, 'setMyCommands', {
-        commands: [
-          { command: 'pending', description: 'درخواست‌های در انتظار' },
-          { command: 'stats', description: 'آمار تمدید' },
-          { command: 'id', description: 'آیدی عددی من' },
-          { command: 'help', description: 'راهنما' },
-        ],
-      });
-    }
+    if (res.ok) await this.setCommands(t);
     return res.ok ? { ok: true, message: 'Buttons active' } : { ok: false, message: res.error };
+  }
+
+  private async setCommands(t: TelegramTarget) {
+    await this.api(t, 'setMyCommands', {
+      commands: [
+        { command: 'pending', description: 'درخواست‌های در انتظار' },
+        { command: 'stats', description: 'آمار تمدید' },
+        { command: 'id', description: 'آیدی عددی من' },
+        { command: 'help', description: 'راهنما' },
+      ],
+    });
   }
 
   async answerCallback(t: TelegramTarget, callbackId: string, text: string, alert = false) {
@@ -201,6 +237,7 @@ export class TelegramService {
     t: TelegramTarget,
     method: string,
     body: Record<string, unknown> | FormData,
+    timeoutMs = 15_000,
   ): Promise<{ ok: boolean; error: string; result?: unknown }> {
     if (!t.telegramBotTokenEnc) return { ok: false, error: 'Telegram bot token is required' };
     const token = decryptSecret(t.telegramBotTokenEnc, this.config.getOrThrow<string>('ENCRYPTION_KEY'));
@@ -212,7 +249,7 @@ export class TelegramService {
         method: 'POST',
         headers: isForm ? undefined : { 'Content-Type': 'application/json' },
         body: isForm ? body : JSON.stringify(body),
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(timeoutMs),
       };
       if (proxy) init.dispatcher = this.agent(proxy);
       const res = await fetch(`${base}/bot${token}/${method}`, init);

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { deriveStatus, expiryFromMs, quotaFromTotalBytes } from '../xui/normalize';
 import { NormalizedSubscription } from '../xui/types';
-import { RenewalTerms, nextQuotaBytes } from '../../panels/renewal-terms';
+import { RenewalTerms, nextExpiryMs, nextQuotaBytes } from '../../panels/renewal-terms';
 
 export interface HmPanelConfig {
   /** Panel origin, e.g. https://panel.example.com */
@@ -31,6 +31,17 @@ export interface HmPanelClient {
   limitIp?: number | null;
   panel?: { id: string; name: string; type: string } | null;
   lastSyncedAt: string | null;
+}
+
+/** A user on an external panel (PasarGuard) that this HMPanel admin owns. */
+export interface HmExternalClient {
+  username: string;
+  usedBytes: number;
+  totalBytes: number;
+  expiryMs: number;
+  disabled: boolean;
+  online?: boolean | null;
+  note?: string | null;
 }
 
 export interface HmPanelCard {
@@ -116,6 +127,37 @@ export class HmPanelClientService {
       if (err instanceof HmPanelHttpError && err.status === 404) return null;
       throw err;
     }
+  }
+
+  /**
+   * The admin's own user on an external panel. HMPanel answers only for users
+   * registered to this admin (a reseller never reaches anyone else's), so a
+   * link that isn't theirs comes back as null.
+   */
+  async externalClient(cfg: HmPanelConfig, provider: string, username: string): Promise<HmExternalClient | null> {
+    try {
+      return await this.request<HmExternalClient>(
+        cfg,
+        'GET',
+        `/v1/premium/external-panels/${encodeURIComponent(provider)}/clients/${encodeURIComponent(username)}`,
+      );
+    } catch (err) {
+      if (err instanceof HmPanelHttpError && [400, 403, 404].includes(err.status)) return null;
+      throw err;
+    }
+  }
+
+  /** Renew an external user through HMPanel, which checks and charges this admin's own quota. */
+  async renewExternal(cfg: HmPanelConfig, provider: string, username: string, plan: RenewalTerms) {
+    const current = await this.externalClient(cfg, provider, username);
+    if (!current) throw new Error('This user is not under this HMPanel admin');
+    await this.request(
+      cfg,
+      'PATCH',
+      `/v1/premium/external-panels/${encodeURIComponent(provider)}/clients/${encodeURIComponent(username)}`,
+      externalRenewal(current, plan),
+    );
+    return { ok: true, message: 'Renewed on HMPanel (PasarGuard)' };
   }
 
   async renew(cfg: HmPanelConfig, clientId: string, plan: RenewalTerms) {
@@ -269,6 +311,60 @@ export class HmPanelClientService {
     }
     return json as T;
   }
+}
+
+/**
+ * HMPanel sets an external user's expiry to "now + expiryDays" and its quota to
+ * dataLimitGb, so turn the plan into those absolutes. There is no usage reset
+ * there: a "reset" plan becomes "what's used + the plan".
+ */
+export function externalRenewal(c: Pick<HmExternalClient, 'usedBytes' | 'totalBytes' | 'expiryMs'>, plan: RenewalTerms, now = Date.now()) {
+  const body: { expiryDays?: number; dataLimitGb?: number; hwidLimit?: number; enabled: boolean } = { enabled: true };
+  if (plan.days > 0) {
+    const until = nextExpiryMs(c.expiryMs > 0 ? c.expiryMs : 0, plan.days, now);
+    body.expiryDays = Math.max(1, Math.ceil((until - now) / 86_400_000));
+  }
+  const used = Math.max(0, Number(c.usedBytes) || 0);
+  const total =
+    plan.mode === 'reset'
+      ? plan.gb > 0
+        ? used + Math.round(plan.gb * 1024 ** 3)
+        : 0
+      : nextQuotaBytes(Math.max(0, Number(c.totalBytes) || 0), plan, used);
+  if (total > 0) body.dataLimitGb = Math.round((total / 1024 ** 3) * 1000) / 1000;
+  if (plan.users > 0) body.hwidLimit = plan.users;
+  return body;
+}
+
+export function normalizeHmExternalClient(c: HmExternalClient): NormalizedSubscription {
+  const { quotaBytes, quotaKind } = quotaFromTotalBytes(c.totalBytes);
+  const exp = expiryFromMs(c.expiryMs);
+  const remaining = quotaKind === 'known' ? Math.max(0, (quotaBytes ?? 0) - c.usedBytes) : null;
+  const status = deriveStatus({
+    enabled: !c.disabled,
+    expiryAtMs: exp.expiryAtMs,
+    expiryKind: exp.expiryKind,
+    remainingBytes: remaining,
+    quotaKind,
+  });
+  return {
+    subscriptionId: c.username,
+    displayName: c.username,
+    status,
+    uploadBytes: null,
+    downloadBytes: null,
+    totalUsedBytes: c.usedBytes,
+    quotaBytes,
+    remainingBytes: remaining,
+    quotaKind,
+    expiryAt: exp.expiryAt,
+    expiryKind: exp.expiryKind,
+    enabled: !c.disabled,
+    dataSource: 'hmpanel:pasarguard',
+    syncState: 'ok',
+    lastSyncAt: new Date().toISOString(),
+    lastSyncError: null,
+  };
 }
 
 export function normalizeHmPanelClient(c: HmPanelClient): NormalizedSubscription {

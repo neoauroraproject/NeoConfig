@@ -134,6 +134,12 @@ export function HmPanelTab({
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <label className="min-w-[16rem] flex-1">
             <span className="mb-1.5 block text-[13px] text-[var(--ink-2)]">پنل</span>
+            {!isAdmin ? (
+              // A reseller works on the connection the admin set up with their own key; they can't switch it.
+              <p className="field flex items-center text-sm">
+                {current ? `${current.name} (${current.host})` : 'هنوز پنلی برای این برند تعیین نشده؛ از مدیر بخواهید'}
+              </p>
+            ) : (
             <select
               className="field"
               value={panelId}
@@ -153,6 +159,7 @@ export function HmPanelTab({
                 </option>
               ))}
             </select>
+            )}
           </label>
           {panelId && (
             <Button variant="secondary" onClick={load} busy={loading}>

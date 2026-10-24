@@ -133,9 +133,22 @@ export class PublicService {
     throw new NotFoundException(NOT_FOUND);
   }
 
+  /**
+   * Strict brands accept only subscriptions found on their own panels: a
+   * reseller's storefront never reads other links or searches the org's other
+   * panels (whose keys may be the owner's full-access ones).
+   */
+  private async isStrict(brand: Brand) {
+    if (brand.strictLookup) return true;
+    if (!brand.ownerId) return false;
+    const owner = await this.prisma.user.findUnique({ where: { id: brand.ownerId }, select: { role: true } }).catch(() => null);
+    return owner?.role === 'RESELLER';
+  }
+
   /** The brand's panels, the ones on `host` first (the likeliest match). */
   private async brandPanels(brand: Brand & { panels: { id: string }[] }, host: string | null) {
     const panelIds = brand.panels.map((p) => p.id);
+    if (!panelIds.length && (await this.isStrict(brand))) return [];
     const panels = await this.prisma.panelConnection.findMany({
       where: panelIds.length ? { id: { in: panelIds } } : { orgId: brand.orgId },
       orderBy: { createdAt: 'asc' },
@@ -172,6 +185,8 @@ export class PublicService {
       }
     }
 
+    // A strict brand never takes a link its own panels don't know.
+    if (await this.isStrict(brand)) throw new NotFoundException(NOT_FOUND);
     // Only now do we fetch the link itself, so only now does it need the DNS/SSRF check.
     await this.assertFetchable(parsed);
     const fallback = await this.fromSubscriptionEndpoint(url, subId);

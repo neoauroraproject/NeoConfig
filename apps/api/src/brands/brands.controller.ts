@@ -64,6 +64,7 @@ class BrandDto {
   @IsOptional() @IsBoolean() active?: boolean;
   @IsOptional() @IsBoolean() isDefault?: boolean;
   @IsOptional() @IsString() ownerId?: string | null;
+  @IsOptional() @IsBoolean() strictLookup?: boolean;
   @IsOptional() @IsBoolean() renewalEnabled?: boolean;
   @IsOptional() @IsString() cardNumber?: string | null;
   @IsOptional() @IsString() cardHolder?: string | null;

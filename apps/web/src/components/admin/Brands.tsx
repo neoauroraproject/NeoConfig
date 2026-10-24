@@ -227,6 +227,7 @@ function BrandEditor({
           active: draft.active,
           panelIds: draft.panelIds,
           ownerId: draft.owner?.id ?? null,
+          strictLookup: Boolean(draft.strictLookup),
           ...(draft.isDefault && !brand.isDefault ? { isDefault: true } : {}),
         });
       }
@@ -917,7 +918,9 @@ function AccessTab({ draft, set, onDeleted }: { draft: AdminBrand; set: SetFn; o
     <div className="space-y-3">
       <Card>
         <h2 className="font-medium">پنل‌های این برند</h2>
-        <p className="mt-1 text-sm text-[var(--ink-2)]">اگر هیچ‌کدام انتخاب نشود، در همهٔ پنل‌ها جست‌وجو می‌شود.</p>
+        <p className="mt-1 text-sm text-[var(--ink-2)]">
+          اگر هیچ‌کدام انتخاب نشود، در همهٔ پنل‌ها جست‌وجو می‌شود — به‌جز برند نماینده، که فقط در پنل‌های انتخاب‌شده می‌گردد. برای برند نماینده، اتصال HMPanel با کلید خود همان نماینده را انتخاب کن تا تمدیدها از سهمیهٔ خودش کم شود.
+        </p>
         <div className="mt-3 space-y-1">
           {panels.map((p) => (
             <label key={p.id} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-[var(--surface-2)]">
@@ -932,6 +935,17 @@ function AccessTab({ draft, set, onDeleted }: { draft: AdminBrand; set: SetFn; o
             </label>
           ))}
           {panels.length === 0 && <p className="text-sm text-[var(--ink-3)]">پنلی وصل نیست.</p>}
+        </div>
+        <div className="mt-3 border-t border-[var(--line)] pt-3">
+          <Toggle
+            id="b-strict"
+            label="فقط اشتراک‌هایی که در پنل‌های همین برند هستند اضافه شوند"
+            checked={Boolean(draft.strictLookup)}
+            onChange={(v) => set('strictLookup', v)}
+          />
+          <p className="mt-1 text-xs leading-6 text-[var(--ink-3)]">
+            لینکی که در این پنل‌ها نیست رد می‌شود (از خود لینک خوانده نمی‌شود). برای برندی که نماینده دارد همیشه روشن است.
+          </p>
         </div>
       </Card>
       <Card>

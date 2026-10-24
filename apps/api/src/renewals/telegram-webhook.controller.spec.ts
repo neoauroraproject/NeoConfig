@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { TelegramBotService } from './telegram-bot.service';
 import { TelegramWebhookController } from './telegram-webhook.controller';
 
 // Two admins by numeric Telegram ID; receipts reach them in private chats.
@@ -18,7 +19,7 @@ function setup(decide = vi.fn().mockResolvedValue({ ok: true, appliedOnPanel: tr
     resendPending: vi.fn().mockResolvedValue(0),
     stats: vi.fn().mockResolvedValue({ pending: 2, todayApproved: 1, todayRejected: 0, monthApproved: 9, monthRejected: 1, failed: 0 }),
   };
-  const c = new TelegramWebhookController(prisma as never, telegram as never, renewals as never);
+  const c = new TelegramWebhookController(prisma as never, new TelegramBotService(telegram as never, renewals as never));
   return { c, telegram, decide, renewals };
 }
 

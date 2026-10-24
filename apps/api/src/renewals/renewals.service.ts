@@ -83,7 +83,8 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
 
     const found = await this.lookup.lookup(brand, input.url);
     const subId = found.subId ?? found.snapshot.subscriptionId;
-    if (plan.service && found.serviceKind && plan.service !== found.serviceKind) {
+    const kind = plan.service ?? (plan.sourcePanelId ? 'xui' : undefined);
+    if (kind && found.serviceKind && kind !== found.serviceKind) {
       throw new BadRequestException('This plan is for a different kind of service');
     }
     if (

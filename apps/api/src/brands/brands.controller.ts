@@ -39,7 +39,7 @@ class LogoDto {
   @IsString() @MaxLength(800_000) dataUrl!: string;
 }
 
-class BrandDto {
+export class BrandDto {
   @IsOptional() @IsString() slug?: string;
   @IsOptional() @IsString() appName?: string;
   @IsOptional() @IsString() shortName?: string;
@@ -178,6 +178,11 @@ export class BrandsController {
   @Get(':id/hmpanel/:panelId/products')
   hmpanelProducts(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('panelId') panelId: string) {
     return this.brands.hmpanelProducts(user, id, panelId);
+  }
+
+  @Post(':id/uptime/test')
+  uptimeTest(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.brands.uptimeTest(user, id);
   }
 
   @Post(':id/telegram/test')

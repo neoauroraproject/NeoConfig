@@ -40,6 +40,8 @@ function flag(country: string | null) {
   return String.fromCodePoint(...[...country.toUpperCase()].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
 }
 
+const UNAVAILABLE: NetworkStatus = { enabled: true, overall: 'unknown', updatedAt: null, groups: [], incidents: [], maintenance: [], stale: true };
+
 const DEMO_STATUS: NetworkStatus = {
   enabled: true,
   overall: 'degraded',
@@ -92,7 +94,8 @@ export function NetworkStatusBox() {
       publicApi
         .networkStatus(tenant)
         .then((s) => !stop && setStatus(s.enabled ? s : null))
-        .catch(() => undefined);
+        // Can't reach our own API: still show the box (as "unavailable") rather than nothing.
+        .catch(() => !stop && setStatus((prev) => prev ?? UNAVAILABLE));
     void load();
     const id = setInterval(load, 60_000);
     return () => {
@@ -175,7 +178,7 @@ export function NetworkStatusBox() {
             </section>
           ))}
 
-        {status.groups.map((g) => (
+        {status.groups.filter((g) => g.monitors.length > 0).map((g) => (
           <section key={g.name} className="mt-4">
             {g.name && <h3 className="mb-2 text-[13px] font-medium text-ink-2">{g.name}</h3>}
             <ul className="divide-y divide-line rounded-3xl bg-surface-2 px-4">

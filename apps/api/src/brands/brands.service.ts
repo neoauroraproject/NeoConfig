@@ -12,7 +12,8 @@ import { lookup } from 'dns/promises';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../auth/auth.types';
 import { brandScope, isOrgAdmin, requireOrgAdmin } from '../common/access/scope';
-import { encryptSecret } from '../common/crypto/secret.crypto';
+import { decryptSecret, encryptSecret } from '../common/crypto/secret.crypto';
+import { fetchNeoUptime } from '../common/neo-uptime';
 import { HmPanelCard, HmPanelProduct } from '../integrations/hmpanel/hmpanel.client';
 import { PanelGatewayService } from '../panels/panel-gateway.service';
 import { compactReminderSettings, parseReminderSettings } from '../push/reminder-settings';
@@ -687,6 +688,32 @@ export class BrandsService {
     }
   }
 
+  /** The saved NeoUptime key's last characters, so an admin can see which one is stored. */
+  private keyHint(enc: string | null) {
+    if (!enc) return null;
+    try {
+      const k = decryptSecret(enc, this.config.getOrThrow<string>('ENCRYPTION_KEY'));
+      return `…${k.slice(-4)}`;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Ask NeoUptime right now with the saved settings, and say exactly what came back. */
+  async uptimeTest(user: AuthUser, id: string) {
+    const b = await this.mustOwn(user, id);
+    if (!b.uptimeUrl || !b.uptimeSlug) return { ok: false, message: 'آدرس یا slug هنوز ذخیره نشده است' };
+    try {
+      const key = b.uptimeKeyEnc ? decryptSecret(b.uptimeKeyEnc, this.config.getOrThrow<string>('ENCRYPTION_KEY')) : null;
+      const s = await fetchNeoUptime(b.uptimeUrl, b.uptimeSlug, key);
+      const monitors = s.groups.reduce((n, g) => n + g.monitors.length, 0);
+      const down = s.groups.reduce((n, g) => n + g.monitors.filter((m) => m.status === 'down').length, 0);
+      return { ok: true, message: `وصل شد ✓ ${monitors} سرور${down ? `، ${down} قطع` : ''} — وضعیت کلی: ${s.overall}` };
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : 'ناموفق' };
+    }
+  }
+
   /** Inbounds the HMPanel admin may create clients on (for direct purchases). */
   async hmpanelInbounds(user: AuthUser, id: string, panelId: string) {
     const store = await this.hmpanelFor(user, id, panelId);
@@ -798,6 +825,7 @@ export class BrandsService {
       uptimeUrl: r.uptimeUrl,
       uptimeSlug: r.uptimeSlug,
       uptimeHasKey: Boolean(r.uptimeKeyEnc),
+      uptimeKeyHint: this.keyHint(r.uptimeKeyEnc),
       owner: r.owner ?? null,
       domains: r.domains.map((d) => ({
         id: d.id,

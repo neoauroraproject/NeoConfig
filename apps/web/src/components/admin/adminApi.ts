@@ -12,6 +12,8 @@ export type AdminBrand = {
   uptimeUrl?: string | null;
   uptimeSlug?: string | null;
   uptimeHasKey?: boolean;
+  /** Last characters of the saved key, e.g. "…H_x". */
+  uptimeKeyHint?: string | null;
   /** Draft only: a new key to save ('' clears it). */
   uptimeKey?: string;
   id: string;
@@ -293,6 +295,7 @@ export const adminApi = {
     }),
   hmpanelOverview: (id: string, panelId: string) => request<HmOverview>(`/api/v1/admin/brands/${id}/hmpanel/${panelId}/overview`, { token: tk() }),
   hmpanelCards: (id: string, panelId: string) => request<HmCard[]>(`/api/v1/admin/brands/${id}/hmpanel/${panelId}/cards`, { token: tk() }),
+  uptimeTest: (id: string) => request<{ ok: boolean; message: string }>(`/api/v1/admin/brands/${id}/uptime/test`, { method: 'POST', token: tk() }),
   hmpanelInbounds: (id: string, panelId: string) =>
     request<HmInbound[]>(`/api/v1/admin/brands/${id}/hmpanel/${panelId}/inbounds`, { token: tk() }),
   hmpanelProducts: (id: string, panelId: string) =>

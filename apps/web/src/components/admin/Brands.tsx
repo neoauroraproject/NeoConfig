@@ -1187,6 +1187,19 @@ function NotifyTab({ brand, draft, set }: { brand: AdminBrand; draft: AdminBrand
 
 /** NeoUptime per brand: the small network box in this brand's app (the key stays on the server). */
 function NetworkTab({ draft, set }: { draft: AdminBrand; set: SetFn }) {
+  const [test, setTest] = useState<{ ok: boolean; message: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+  async function runTest() {
+    setTesting(true);
+    setTest(null);
+    try {
+      setTest(await adminApi.uptimeTest(draft.id));
+    } catch (e) {
+      setTest({ ok: false, message: errMsg(e) });
+    } finally {
+      setTesting(false);
+    }
+  }
   return (
     <div className="space-y-3">
         <Card>
@@ -1237,13 +1250,24 @@ function NetworkTab({ draft, set }: { draft: AdminBrand; set: SetFn }) {
                 type="password"
                 autoComplete="off"
                 className="field"
-                placeholder={draft.uptimeHasKey ? 'ذخیره شده — برای تغییر بنویسید' : 'Bearer key'}
+                placeholder={draft.uptimeHasKey ? `ذخیره شده (${draft.uptimeKeyHint ?? '…'}) — برای تغییر بنویسید` : 'Bearer key'}
                 value={draft.uptimeKey ?? ''}
                 onChange={(e) => set('uptimeKey', e.target.value)}
               />
             </Field>
           </div>
-          <p className="mt-2 text-xs text-[var(--ink-3)]">بعد از ذخیره، باکس در اپ ظاهر می‌شود. برای خاموش کردن، آدرس را پاک کنید.</p>
+          {draft.uptimeHasKey && (
+            <p className="mt-2 text-xs text-[#1fa66a]">✓ کلید ذخیره شده است ({draft.uptimeKeyHint ?? '…'}) — برای امنیت دوباره نمایش داده نمی‌شود.</p>
+          )}
+          <p className="mt-2 text-xs text-[var(--ink-3)]">
+            بعد از ذخیره، باکس در داشبورد اپ (بالای صفحه، زیر لوگو) ظاهر می‌شود. برای خاموش کردن، آدرس را پاک کنید.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <Button variant="secondary" onClick={runTest} busy={testing} disabled={!draft.uptimeUrl || !draft.uptimeSlug}>
+              بررسی اتصال (با تنظیمات ذخیره‌شده)
+            </Button>
+            {test && <p className={`text-sm ${test.ok ? 'text-[#1fa66a]' : 'text-[#d4373f]'}`}>{test.message}</p>}
+          </div>
         </Card>
     </div>
   );

@@ -75,11 +75,10 @@ export function networkTone(s: NetworkStatus): { tone: Tone; down: number } {
   return { tone: 'unknown', down };
 }
 
-/** The small network box under the header; a tap opens every server's state. */
-export function NetworkStatusBox() {
-  const { brand, tenant, t, locale } = useSf();
+/** The brand's network status, refreshed every minute (null while off or not loaded yet). */
+export function useNetworkStatus() {
+  const { brand, tenant } = useSf();
   const [status, setStatus] = useState<NetworkStatus | null>(null);
-  const [open, setOpen] = useState(false);
   const enabled = Boolean(brand.networkStatus);
 
   useEffect(() => {
@@ -87,7 +86,12 @@ export function NetworkStatusBox() {
     let stop = false;
     // The demo page shows a sample network (one server down) instead of calling a server.
     if (tenant.startsWith('demo-')) {
-      setStatus(DEMO_STATUS);
+      // ?net=ok shows the calm network (box among the lower cards).
+      setStatus(
+        new URLSearchParams(location.search).get('net') === 'ok'
+          ? { ...DEMO_STATUS, overall: 'operational', incidents: [], groups: DEMO_STATUS.groups.map((g) => ({ ...g, monitors: g.monitors.map((m) => ({ ...m, status: 'up' })) })) }
+          : DEMO_STATUS,
+      );
       return;
     }
     const load = () =>
@@ -104,7 +108,20 @@ export function NetworkStatusBox() {
     };
   }, [enabled, tenant]);
 
-  if (!enabled || !status) return null;
+  return enabled ? status : null;
+}
+
+/** Calm network: a quiet box among the lower cards. Trouble or maintenance: it moves up under the header. */
+export function networkPlacement(status: NetworkStatus | null): 'top' | 'bottom' | null {
+  if (!status) return null;
+  const { tone } = networkTone(status);
+  return tone === 'ok' || tone === 'unknown' ? 'bottom' : 'top';
+}
+
+/** The network box; a tap opens every server's state. */
+export function NetworkStatusBox({ status, placement }: { status: NetworkStatus; placement: 'top' | 'bottom' }) {
+  const { t, locale } = useSf();
+  const [open, setOpen] = useState(false);
   const { tone, down } = networkTone(status);
   const fmt = (n: number) => n.toLocaleString(locale === 'fa' ? 'fa-IR' : 'en-US');
   const label =
@@ -127,7 +144,9 @@ export function NetworkStatusBox() {
         onClick={() => setOpen(true)}
         initial={{ opacity: 0, y: -4 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mt-5 flex w-full items-center gap-3 rounded-3xl bg-surface px-4 py-3 text-start shadow-raise-sm"
+        className={`flex w-full items-center gap-3 bg-surface px-4 py-3 text-start ${
+          placement === 'top' ? 'mt-5 rounded-3xl shadow-raise-sm' : 'mt-3 rounded-[1.75rem] shadow-raise'
+        }`}
         aria-label={`${t('net_title')}: ${label}`}
       >
         <span className="relative grid h-3 w-3 place-items-center">

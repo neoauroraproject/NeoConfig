@@ -23,7 +23,7 @@ import { SavedAccount, dailyUsage } from '@/lib/accounts';
 import { bytesParts, daysUntil, formatBytes, relativeTime, usageFraction } from '@/lib/format';
 import { BrandMark } from './BrandMark';
 import { useSf } from './context';
-import { NetworkStatusBox } from './NetworkStatus';
+import { NetworkStatusBox, networkPlacement, useNetworkStatus } from './NetworkStatus';
 
 type Props = {
   account: SavedAccount;
@@ -56,6 +56,8 @@ export function Dashboard(p: Props) {
   const s = p.account.snapshot;
   const name = p.account.label || s.displayName;
   const canRenew = Boolean(brand.renewal);
+  const network = useNetworkStatus();
+  const networkAt = networkPlacement(network);
 
   return (
     <div className="relative mx-auto min-h-dvh w-full max-w-[440px] px-5 pb-36 pt-[max(1.5rem,env(safe-area-inset-top))] wide:max-w-[1120px] wide:px-10 wide:pb-32 wide:pt-8">
@@ -86,7 +88,7 @@ export function Dashboard(p: Props) {
           </button>
         </div>
       </header>
-      <NetworkStatusBox />
+      {network && networkAt === 'top' && <NetworkStatusBox status={network} placement="top" />}
 
       {/* desktop: hero + actions on the left, figures on the right */}
       <div className="wide:mt-8 wide:grid wide:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] wide:items-start wide:gap-6">
@@ -224,6 +226,7 @@ export function Dashboard(p: Props) {
           {locale === 'fa' ? <ChevronLeft className="h-4 w-4 text-ink-3" /> : <ChevronRight className="h-4 w-4 text-ink-3" />}
         </button>
       </section>
+      {network && networkAt === 'bottom' && <NetworkStatusBox status={network} placement="bottom" />}
       </div>
       </div>
 

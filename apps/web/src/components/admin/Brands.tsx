@@ -156,7 +156,7 @@ function NewBrand({ onCancel, onCreated }: { onCancel: () => void; onCreated: (b
   );
 }
 
-type Tab = 'look' | 'domains' | 'renewal' | 'hmpanel' | 'access' | 'notify';
+type Tab = 'look' | 'domains' | 'renewal' | 'hmpanel' | 'access' | 'notify' | 'network';
 
 function BrandEditor({
   brand,
@@ -283,6 +283,7 @@ function BrandEditor({
     ['hmpanel', 'HMPanel'],
     ...(isAdmin ? ([['access', 'پنل و نماینده']] as Array<[Tab, string]>) : []),
     ['notify', 'اعلان'],
+    ['network', 'وضعیت شبکه'],
   ];
   const liveUrl = brand.domains.find((d) => d.sslOk)?.domain
     ? `https://${brand.domains.find((d) => d.sslOk)!.domain}`
@@ -349,6 +350,7 @@ function BrandEditor({
             />
           )}
           {tab === 'access' && isAdmin && <AccessTab draft={draft} set={set} onDeleted={onDeleted} />}
+          {tab === 'network' && <NetworkTab draft={draft} set={set} />}
           {tab === 'notify' && (
             <>
               <TelegramCard
@@ -1159,40 +1161,6 @@ function NotifyTab({ brand, draft, set }: { brand: AdminBrand; draft: AdminBrand
     <div className="space-y-3">
       <RemindersCard draft={draft} set={set} />
       <Card>
-        <h2 className="font-medium">وضعیت شبکه در اپ (NeoUptime)</h2>
-        <p className="mt-1 text-sm leading-7 text-[var(--ink-2)]">
-          یک باکس کوچک زیر سربرگ اپ نشان می‌دهد شبکه پایدار است یا اختلال دارد؛ با لمس، وضعیت هر سرور و اختلال‌ها باز می‌شود. کلید فقط روی سرور می‌ماند.
-        </p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <Field label="آدرس NeoUptime" htmlFor="up-url">
-            <input
-              id="up-url"
-              dir="ltr"
-              className="field"
-              placeholder="https://status.example.com"
-              value={draft.uptimeUrl ?? ''}
-              onChange={(e) => set('uptimeUrl', e.target.value)}
-            />
-          </Field>
-          <Field label="شناسهٔ صفحه (slug)" htmlFor="up-slug">
-            <input id="up-slug" dir="ltr" className="field" placeholder="my-network" value={draft.uptimeSlug ?? ''} onChange={(e) => set('uptimeSlug', e.target.value)} />
-          </Field>
-          <Field label="کلید API" htmlFor="up-key">
-            <input
-              id="up-key"
-              dir="ltr"
-              type="password"
-              autoComplete="off"
-              className="field"
-              placeholder={draft.uptimeHasKey ? 'ذخیره شده — برای تغییر بنویسید' : 'Bearer key'}
-              value={draft.uptimeKey ?? ''}
-              onChange={(e) => set('uptimeKey', e.target.value)}
-            />
-          </Field>
-        </div>
-        <p className="mt-2 text-xs text-[var(--ink-3)]">بعد از ذخیره، باکس در اپ ظاهر می‌شود. برای خاموش کردن، آدرس را پاک کنید.</p>
-      </Card>
-      <Card>
         <h2 className="font-medium">ارسال اعلان به کاربران {brand.appName}</h2>
         <p className="mt-1 text-sm text-[var(--ink-2)]">
           {brand.devices} دستگاه اعلان را روشن کرده‌اند. برای اطلاعیهٔ قطعی، آدرس جدید یا تخفیف.
@@ -1213,6 +1181,48 @@ function NotifyTab({ brand, draft, set }: { brand: AdminBrand; draft: AdminBrand
         </form>
       </Card>
       <PushLogCard brandId={brand.id} version={sentCount} />
+    </div>
+  );
+}
+
+/** NeoUptime per brand: the small network box in this brand's app (the key stays on the server). */
+function NetworkTab({ draft, set }: { draft: AdminBrand; set: SetFn }) {
+  return (
+    <div className="space-y-3">
+        <Card>
+          <h2 className="font-medium">وضعیت شبکه در اپ (NeoUptime)</h2>
+          <p className="mt-1 text-sm leading-7 text-[var(--ink-2)]">
+            یک باکس کوچک زیر سربرگ اپ نشان می‌دهد شبکه پایدار است یا اختلال دارد؛ با لمس، وضعیت هر سرور و اختلال‌ها باز می‌شود. کلید فقط روی سرور می‌ماند.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <Field label="آدرس NeoUptime" htmlFor="up-url">
+              <input
+                id="up-url"
+                dir="ltr"
+                className="field"
+                placeholder="https://status.example.com"
+                value={draft.uptimeUrl ?? ''}
+                onChange={(e) => set('uptimeUrl', e.target.value)}
+              />
+            </Field>
+            <Field label="شناسهٔ صفحه (slug)" htmlFor="up-slug">
+              <input id="up-slug" dir="ltr" className="field" placeholder="my-network" value={draft.uptimeSlug ?? ''} onChange={(e) => set('uptimeSlug', e.target.value)} />
+            </Field>
+            <Field label="کلید API" htmlFor="up-key">
+              <input
+                id="up-key"
+                dir="ltr"
+                type="password"
+                autoComplete="off"
+                className="field"
+                placeholder={draft.uptimeHasKey ? 'ذخیره شده — برای تغییر بنویسید' : 'Bearer key'}
+                value={draft.uptimeKey ?? ''}
+                onChange={(e) => set('uptimeKey', e.target.value)}
+              />
+            </Field>
+          </div>
+          <p className="mt-2 text-xs text-[var(--ink-3)]">بعد از ذخیره، باکس در اپ ظاهر می‌شود. برای خاموش کردن، آدرس را پاک کنید.</p>
+        </Card>
     </div>
   );
 }

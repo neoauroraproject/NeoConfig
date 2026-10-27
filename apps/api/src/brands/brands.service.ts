@@ -63,7 +63,7 @@ const EDITABLE = [
   'theme', 'defaultLocale', 'supportUrl', 'supportTelegram', 'contactEmail', 'allowCopyLink',
   'renewalEnabled', 'cardNumber', 'cardHolder', 'bankName', 'renewalNote', 'expiryRemindersEnabled',
   'telegramChatId', 'renewalVia', 'renewalPanelId', 'cardFromPanel', 'hmCardId', 'plansSync', 'purchaseEnabled',
-  'autoDecideMinutes', 'autoDecideAction', 'iconBg', 'buttonColor',
+  'autoDecideMinutes', 'autoDecideAction', 'iconBg', 'buttonColor', 'purchaseVia', 'uptimeUrl', 'uptimeSlug',
 ] as const;
 
 export type BrandInput = Partial<Record<(typeof EDITABLE)[number], string | boolean | number | null>> & {
@@ -72,6 +72,9 @@ export type BrandInput = Partial<Record<(typeof EDITABLE)[number], string | bool
   isDefault?: boolean;
   ownerId?: string | null;
   strictLookup?: boolean;
+  purchaseInbounds?: string[];
+  /** New NeoUptime key; '' clears it, undefined keeps it. */
+  uptimeKey?: string;
   plans?: PlanInput[];
   panelIds?: string[];
   themeChoices?: string[];
@@ -178,8 +181,17 @@ export class BrandsService {
       supportTelegram: b?.supportTelegram ?? null,
       contactEmail: b?.contactEmail ?? null,
       allowCopyLink: b?.allowCopyLink ?? true,
-      // New services are sold through the HMPanel store, so only store-linked plans qualify.
-      purchase: Boolean(b?.purchaseEnabled && b.renewalPanelId && renewal && plans.some((p) => p.productId)),
+      // Store mode sells store products; direct mode creates the client itself from any 3x-ui plan.
+      purchase: Boolean(
+        b?.purchaseEnabled &&
+          b.renewalPanelId &&
+          renewal &&
+          (b.purchaseVia === 'direct'
+            ? parsePurchaseInbounds(b.purchaseInbounds).length > 0 && plans.some((p) => p.service !== 'pasarguard')
+            : plans.some((p) => p.productId)),
+      ),
+      purchaseVia: b?.purchaseVia === 'direct' ? 'direct' : 'store',
+      networkStatus: Boolean(b?.uptimeUrl && b.uptimeSlug),
       renewal,
     };
   }
@@ -278,6 +290,10 @@ export class BrandsService {
       if (input.telegramProxy !== undefined) data.telegramProxy = cleanRoute(input.telegramProxy, 'proxy');
     }
     if (input.reminders) data.reminderJson = compactReminderSettings(input.reminders, brand.defaultLocale);
+    if (input.purchaseInbounds) data.purchaseInbounds = JSON.stringify(input.purchaseInbounds.map(String).slice(0, 50));
+    if (input.uptimeKey !== undefined) {
+      data.uptimeKeyEnc = input.uptimeKey.trim() ? encryptSecret(input.uptimeKey.trim(), this.config.getOrThrow<string>('ENCRYPTION_KEY')) : null;
+    }
     if (input.copy) data.copyJson = JSON.stringify(parseCopy(JSON.stringify(input.copy)));
     if (input.themeChoices) data.themeChoices = themeList('mist', input.themeChoices).filter((t) => input.themeChoices!.includes(t));
     if (admin) {
@@ -431,6 +447,9 @@ export class BrandsService {
         out[k] = Boolean(v);
       else if (k === 'theme') out[k] = THEMES.includes(v as never) ? v : 'mist';
       else if (k === 'renewalVia') out[k] = v === 'hmpanel' ? 'hmpanel' : 'local';
+      else if (k === 'purchaseVia') out[k] = v === 'direct' ? 'direct' : 'store';
+      else if (k === 'uptimeUrl') out[k] = typeof v === 'string' && /^https?:\/\//i.test(v.trim()) ? v.trim().replace(/\/+$/, '').slice(0, 300) : null;
+      else if (k === 'uptimeSlug') out[k] = typeof v === 'string' ? v.trim().replace(/[^\w.-]/g, '').slice(0, 120) || null : null;
       else if (k === 'iconBg') out[k] = typeof v === 'string' && ICON_BGS.includes(v as never) ? v : 'theme';
       else if (k === 'buttonColor') out[k] = typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v : null;
       else if (k === 'autoDecideAction') out[k] = v === 'reject' ? 'reject' : 'approve';
@@ -668,6 +687,16 @@ export class BrandsService {
     }
   }
 
+  /** Inbounds the HMPanel admin may create clients on (for direct purchases). */
+  async hmpanelInbounds(user: AuthUser, id: string, panelId: string) {
+    const store = await this.hmpanelFor(user, id, panelId);
+    try {
+      return await store.inbounds();
+    } catch (err) {
+      throw new BadRequestException(hmError(err));
+    }
+  }
+
   async hmpanelProducts(user: AuthUser, id: string, panelId: string) {
     const store = await this.hmpanelFor(user, id, panelId);
     try {
@@ -764,6 +793,11 @@ export class BrandsService {
       telegramProxy: r.telegramProxy,
       panelIds: r.panels.map((p) => p.id),
       strictLookup: r.strictLookup,
+      purchaseVia: r.purchaseVia === 'direct' ? 'direct' : 'store',
+      purchaseInbounds: parsePurchaseInbounds(r.purchaseInbounds),
+      uptimeUrl: r.uptimeUrl,
+      uptimeSlug: r.uptimeSlug,
+      uptimeHasKey: Boolean(r.uptimeKeyEnc),
       owner: r.owner ?? null,
       domains: r.domains.map((d) => ({
         id: d.id,
@@ -879,4 +913,14 @@ function cleanRoute(v: string | null | undefined, kind: 'relay' | 'proxy'): stri
   if (kind === 'relay' && u.protocol !== 'https:') throw new BadRequestException('Relay must use https://');
   if (kind === 'proxy' && !['http:', 'https:'].includes(u.protocol)) throw new BadRequestException('Only HTTP proxies are supported (http://host:port)');
   return raw.replace(/\/+$/, '').slice(0, 200);
+}
+
+/** HMPanel inbound ids a directly bought service is created on. */
+export function parsePurchaseInbounds(raw: string | null | undefined): string[] {
+  try {
+    const v = JSON.parse(raw || '[]') as unknown;
+    return Array.isArray(v) ? v.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
 }

@@ -4,7 +4,7 @@ import { createHash } from 'crypto';
 import { Brand, PanelConnection, RenewalRequest, RenewalStatus } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../auth/auth.types';
-import { BrandsService, hmError, parsePlans } from '../brands/brands.service';
+import { BrandsService, hmError, parsePlans, parsePurchaseInbounds } from '../brands/brands.service';
 import { HM_ORDER_DONE, HM_ORDER_REFUSED } from '../integrations/hmpanel/hmpanel.client';
 import { brandScope } from '../common/access/scope';
 import { decryptSecret, encryptSecret } from '../common/crypto/secret.crypto';
@@ -216,7 +216,14 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
     if (!brand?.purchaseEnabled || !brand.renewalPanelId || !brand.renewalEnabled) {
       throw new BadRequestException('Buying a new service is not available here');
     }
-    const plan = parsePlans(brand.plansJson).find((p) => p.id === input.planId && p.price.trim() && p.productId);
+    // direct: NeoConfig creates the client itself on the chosen inbounds (any 3x-ui plan); store: an HMPanel store order.
+    const direct = brand.purchaseVia === 'direct';
+    if (direct && !parsePurchaseInbounds(brand.purchaseInbounds).length) {
+      throw new BadRequestException('Buying a new service is not available here');
+    }
+    const plan = parsePlans(brand.plansJson).find(
+      (p) => p.id === input.planId && p.price.trim() && (direct ? p.service !== 'pasarguard' : p.productId),
+    );
     if (!plan) throw new BadRequestException('Choose one of the listed plans');
     const panel = await this.prisma.panelConnection.findUnique({ where: { id: brand.renewalPanelId } });
     if (!panel || panel.type !== 'hmpanel') throw new BadRequestException('Buying a new service is not available here');
@@ -256,6 +263,10 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
         deviceEndpoint: input.deviceEndpoint?.slice(0, 1024) || null,
       },
     });
+    if (direct) {
+      // Nothing is created until someone (or the auto decision) approves; then provisionDirect builds it.
+      return this.finishPurchase(brand, row, input.accountToken, name, { mime, data }, row);
+    }
     try {
       const order = await this.gateway.hmStore(panel).createOrder({
         productId: plan.productId!,
@@ -272,23 +283,86 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
         data: { externalOrderId: order.orderId ?? order.id ?? null, externalCode: order.trackingCode ?? null, externalSyncedAt: new Date() },
         omit: { receiptData: true },
       });
-      // The buyer's login: the one they are signed in to, or a new one with a starting password to show them.
-      const buyer = await this.customers.forPurchase(brand, input.accountToken, name).catch((err) => {
-        this.logger.warn(`No customer account for purchase ${row.id}: ${err instanceof Error ? err.message : err}`);
-        return null;
-      });
-      if (buyer) await this.prisma.renewalRequest.update({ where: { id: row.id }, data: { customerId: buyer.id } });
-      // Reviewed here like a renewal (buttons + auto decision); approving it approves the HMPanel order,
-      // which builds the service. HMPanel's own store bot gets the order too.
-      void this.review(row, undefined)
-        .then((review) => this.telegram.renewalReceived(brand, { ...row, review }, { mime, data }))
-        .then((refs) => this.saveTelegramRefs(row.id, refs))
-        .catch(() => undefined);
-      return { ...this.toPublic(updated), account: buyer?.credentials ?? null };
+      return this.finishPurchase(brand, row, input.accountToken, name, { mime, data }, updated);
     } catch (err) {
       await this.prisma.renewalRequest.delete({ where: { id: row.id } }).catch(() => undefined);
       throw new BadRequestException(hmError(err));
     }
+  }
+
+  /**
+   * After a purchase is filed: the buyer's login (theirs, or a new one with a
+   * starting password to show them), and review in the bot like a renewal
+   * (buttons + auto decision).
+   */
+  private async finishPurchase(
+    brand: Brand,
+    row: RenewalRequest,
+    accountToken: string | undefined,
+    name: string | null,
+    receipt: { mime: string; data: Buffer },
+    current: Parameters<RenewalsService['toPublic']>[0],
+  ) {
+    const buyer = await this.customers.forPurchase(brand, accountToken, name).catch((err) => {
+      this.logger.warn(`No customer account for purchase ${row.id}: ${err instanceof Error ? err.message : err}`);
+      return null;
+    });
+    if (buyer) await this.prisma.renewalRequest.update({ where: { id: row.id }, data: { customerId: buyer.id } });
+    void this.review(row, undefined)
+      .then((review) => this.telegram.renewalReceived(brand, { ...row, review }, receipt))
+      .then((refs) => this.saveTelegramRefs(row.id, refs))
+      .catch(() => undefined);
+    return { ...this.toPublic(current), account: buyer?.credentials ?? null };
+  }
+
+  /**
+   * Direct purchase approved: create the client on the brand's HMPanel
+   * connection (that admin's quota, the inbounds the brand picked), then pick up
+   * its subscription link so it reaches the buyer's app and login.
+   */
+  private async provisionDirect(row: RenewalRow) {
+    const brand = await this.prisma.brand.findUnique({ where: { id: row.brandId } });
+    const inboundIds = parsePurchaseInbounds(brand?.purchaseInbounds);
+    if (!brand || !inboundIds.length || !row.panelId) throw new BadRequestException('Direct purchase is not set up for this brand');
+    const panel = await this.prisma.panelConnection.findUnique({ where: { id: row.panelId } });
+    if (!panel || panel.type !== 'hmpanel') throw new BadRequestException('Direct purchase needs an HMPanel connection');
+    const store = this.gateway.hmStore(panel);
+    const now = Date.now();
+    let email = '';
+    let lastErr: unknown = null;
+    for (let i = 0; i < 4 && !email; i++) {
+      const candidate = `${configNameFrom(row.payerName)}${Math.floor(1000 + Math.random() * 9000)}`;
+      try {
+        await store.createClient({
+          email: candidate,
+          inboundIds,
+          total: row.gb > 0 ? Math.round(row.gb * 1024 ** 3) : 0,
+          expiryTime: row.days > 0 ? now + row.days * 86_400_000 : 0,
+          ...(row.users > 0 ? { limitIp: row.users } : {}),
+          remark: (row.payerName || '').slice(0, 60) || undefined,
+        });
+        email = candidate;
+      } catch (err) {
+        lastErr = err;
+        // Only a taken name is worth another try; quota, inbounds or permissions won't change.
+        if (!/already|exists|in use|taken/i.test(hmError(err))) break;
+      }
+    }
+    if (!email) throw new BadRequestException(`HMPanel did not create the service: ${hmError(lastErr)}`);
+    const client = await store.lookup(email).catch(() => null);
+    const url = client?.subscriptionUrl ?? null;
+    const key = this.config.getOrThrow<string>('ENCRYPTION_KEY');
+    await this.prisma.renewalRequest.update({
+      where: { id: row.id },
+      data: {
+        clientRef: client?.id ?? null,
+        ...(url ? { resultUrlEnc: encryptSecret(url, key), subUrlEnc: encryptSecret(url, key) } : {}),
+      },
+    });
+    if (url && row.customerId) {
+      await this.customers.attach(row.customerId, extractSubId(url) ?? row.id, url).catch(() => undefined);
+    }
+    return { email, url };
   }
 
   async statuses(ids: string[]) {
@@ -557,6 +631,11 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
       }
       appliedOnPanel = true;
       applyMessage = `HMPanel ${row.externalCode ?? ''}`.trim();
+    } else if (row.kind === 'purchase') {
+      // Direct purchase: build the service now (it stays pending if HMPanel refuses, e.g. no quota left).
+      const made = await this.provisionDirect(row);
+      appliedOnPanel = true;
+      applyMessage = `Created on HMPanel: ${made.email}${made.url ? '' : ' (link not found yet)'}`;
     } else if (opts.apply) {
       const target = await this.resolveTarget(row);
       if (!target) {
@@ -661,6 +740,16 @@ export class RenewalsService implements OnApplicationBootstrap, OnModuleDestroy 
       .catch(() => null);
     const link = decision.approved && fresh ? await this.addLinkOf(fresh, this.config.getOrThrow<string>('ENCRYPTION_KEY')) : null;
     if (link) summary += `\n🔗 لینک افزودن به اپ (برای کاربر بفرستید؛ با یک لمس اضافه می‌شود):\n<code>${escHtml(link)}</code>`;
+    if (decision.approved && fresh?.kind === 'purchase' && fresh.resultUrlEnc) {
+      try {
+        const sub = decryptSecret(fresh.resultUrlEnc, this.config.getOrThrow<string>('ENCRYPTION_KEY'));
+        summary += `
+📎 لینک اشتراک:
+<code>${escHtml(sub)}</code>`;
+      } catch {
+        /* unreadable link: the add link above still works */
+      }
+    }
     // The HMPanel bot's copy closes too, whichever side decided.
     void this.closeHmNotice(fresh?.hmNotifyJson, `${decisionLine(decision)}\n${summary}`);
     const brand = await this.prisma.brand.findUnique({ where: { id: row.brandId } }).catch(() => null);

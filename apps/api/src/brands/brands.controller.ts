@@ -65,6 +65,11 @@ class BrandDto {
   @IsOptional() @IsBoolean() isDefault?: boolean;
   @IsOptional() @IsString() ownerId?: string | null;
   @IsOptional() @IsBoolean() strictLookup?: boolean;
+  @IsOptional() @IsIn(['store', 'direct']) purchaseVia?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) purchaseInbounds?: string[];
+  @IsOptional() @IsString() @MaxLength(300) uptimeUrl?: string | null;
+  @IsOptional() @IsString() @MaxLength(120) uptimeSlug?: string | null;
+  @IsOptional() @IsString() @MaxLength(300) uptimeKey?: string;
   @IsOptional() @IsBoolean() renewalEnabled?: boolean;
   @IsOptional() @IsString() cardNumber?: string | null;
   @IsOptional() @IsString() cardHolder?: string | null;
@@ -163,6 +168,11 @@ export class BrandsController {
   @Get(':id/hmpanel/:panelId/cards')
   hmpanelCards(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('panelId') panelId: string) {
     return this.brands.hmpanelCards(user, id, panelId);
+  }
+
+  @Get(':id/hmpanel/:panelId/inbounds')
+  hmpanelInbounds(@CurrentUser() user: AuthUser, @Param('id') id: string, @Param('panelId') panelId: string) {
+    return this.brands.hmpanelInbounds(user, id, panelId);
   }
 
   @Get(':id/hmpanel/:panelId/products')

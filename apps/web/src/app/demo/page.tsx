@@ -22,6 +22,7 @@ export default async function DemoPage({ searchParams }: Props) {
     theme: THEME_IDS.includes(theme as ThemeId) ? (theme as ThemeId) : brand.theme,
     themes: [...THEME_IDS],
     purchase: true,
+    networkStatus: true,
     renewal: brand.renewal ?? {
       cardNumber: '6037991234567890',
       cardHolder: 'نمونه',

@@ -127,6 +127,10 @@ export type Branding = {
   allowCopyLink: boolean;
   /** Customers can buy a new service in the app. */
   purchase?: boolean;
+  /** store: HMPanel store products; direct: any 3x-ui plan, created on the brand's own inbounds. */
+  purchaseVia?: 'store' | 'direct';
+  /** A NeoUptime status page is set up (the small network box). */
+  networkStatus?: boolean;
   renewal: {
     cardNumber: string;
     cardHolder: string | null;
@@ -151,6 +155,28 @@ export type PublicRenewal = {
   adminNote: string | null;
   createdAt: string;
   decidedAt: string | null;
+};
+
+/** The brand's network as NeoUptime reports it (cleaned by the server). */
+export type NetworkStatus = {
+  enabled: true;
+  overall: string;
+  updatedAt: number | null;
+  groups: Array<{
+    name: string;
+    monitors: Array<{
+      name: string;
+      country: string | null;
+      status: string;
+      latencyMs: number | null;
+      uptime24h: number | null;
+      uptime30d: number | null;
+      history: string[];
+    }>;
+  }>;
+  incidents: Array<{ title: string; message: string | null; status: string | null; at: number | null }>;
+  maintenance: Array<{ title: string; message: string | null; status: string | null; at: number | null }>;
+  stale?: boolean;
 };
 
 /** A customer login and the subscription links it carries. */
@@ -281,6 +307,9 @@ export const publicApi = {
     request<{ ok: boolean }>('/api/v1/public/account/logout', { method: 'POST', body: JSON.stringify({ tenant, token }) }).catch(
       () => ({ ok: false }),
     ),
+
+  networkStatus: (tenant: string) =>
+    request<NetworkStatus | { enabled: false }>(`/api/v1/public/network-status?tenant=${encodeURIComponent(tenant)}`),
 
   renewalStatus: (ids: string[]) =>
     request<PublicRenewal[]>('/api/v1/public/renewals/status', {

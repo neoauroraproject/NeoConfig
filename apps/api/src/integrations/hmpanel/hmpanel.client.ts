@@ -44,6 +44,15 @@ export interface HmExternalClient {
   note?: string | null;
 }
 
+export interface HmPanelInbound {
+  id: string;
+  tag?: string | null;
+  remark?: string | null;
+  protocol?: string | null;
+  port?: number | null;
+  panel?: { id: string; name: string; panelType?: string | null } | null;
+}
+
 export interface HmPanelCard {
   id: string;
   bankName: string | null;
@@ -158,6 +167,23 @@ export class HmPanelClientService {
       externalRenewal(current, plan),
     );
     return { ok: true, message: 'Renewed on HMPanel (PasarGuard)' };
+  }
+
+  /** Inbounds this admin may create clients on. */
+  async inbounds(cfg: HmPanelConfig) {
+    const r = await this.request<{ data?: HmPanelInbound[] } | HmPanelInbound[]>(cfg, 'GET', '/v1/inbounds');
+    return Array.isArray(r) ? r : r.data ?? [];
+  }
+
+  /**
+   * A new client for this admin (POST /v1/clients, scope clients.write). HMPanel
+   * creates it like its own panel does: checks and charges this admin's quota.
+   */
+  async createClient(
+    cfg: HmPanelConfig,
+    body: { email: string; inboundIds: string[]; total: number; expiryTime: number; limitIp?: number; remark?: string },
+  ) {
+    return this.request<{ id?: string; email?: string }>(cfg, 'POST', '/v1/clients', body);
   }
 
   async renew(cfg: HmPanelConfig, clientId: string, plan: RenewalTerms) {

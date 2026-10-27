@@ -16,7 +16,7 @@ export function RenewalDetailSheet({
   onClose: () => void;
   onRetry: (r: PublicRenewal) => void;
 }) {
-  const { t, brand, locale } = useSf();
+  const { t, brand, locale, toast } = useSf();
   const r = renewal;
   const support = brand.supportTelegram
     ? `https://t.me/${brand.supportTelegram.replace(/^@/, '')}`
@@ -49,6 +49,27 @@ export function RenewalDetailSheet({
           )}
           {r.status === 'pending' && <p className="mt-3 text-sm leading-7 text-ink-2">{purchase ? t('purchasePending') : t('sentBody')}</p>}
           {r.status === 'approved' && r.adminNote && <p className="mt-3 text-sm leading-7 text-ink-2">{r.adminNote}</p>}
+          {purchase && r.status === 'approved' && r.subscriptionUrl && (
+            <div className="mt-3 space-y-2">
+              {[
+                { label: t('subLinkLabel'), value: r.subscriptionUrl },
+                { label: t('appLinkLabel'), value: `${location.origin}${location.pathname}#add=${encodeURIComponent(r.subscriptionUrl)}` },
+              ].map((l) => (
+                <button
+                  key={l.label}
+                  type="button"
+                  onClick={() => void navigator.clipboard?.writeText(l.value).then(() => toast(t('copied'))).catch(() => undefined)}
+                  className="block w-full rounded-3xl bg-surface-2 p-4 text-start"
+                >
+                  <span className="block text-xs text-ink-3">{l.label}</span>
+                  <span dir="ltr" className="mt-1 block truncate text-[13px] text-ink">
+                    {l.value}
+                  </span>
+                  <span className="mt-1 block text-xs font-medium text-brand">{t('copyLink')}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           <dl className="mt-3 divide-y divide-line rounded-3xl bg-surface-2 px-4 text-sm">
             <div className="flex justify-between gap-4 py-3">

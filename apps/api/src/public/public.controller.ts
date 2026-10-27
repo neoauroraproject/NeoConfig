@@ -3,6 +3,7 @@ import type { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 import { BrandsService } from '../brands/brands.service';
+import { NetworkStatusService } from './network-status.service';
 import { PublicService } from './public.service';
 
 class LookupDto {
@@ -21,7 +22,14 @@ export class PublicController {
   constructor(
     private readonly publicService: PublicService,
     private readonly brands: BrandsService,
+    private readonly network: NetworkStatusService,
   ) {}
+
+  /** The brand's network status (NeoUptime), for the small box in the app. */
+  @Get('network-status')
+  networkStatus(@Query('tenant') tenant?: string) {
+    return this.network.forTenant(tenant);
+  }
 
   @Get('branding')
   branding(@Query('tenant') tenant?: string) {

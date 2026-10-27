@@ -5,6 +5,15 @@ export type Role = 'SUPER_ADMIN' | 'ORG_ADMIN' | 'RESELLER' | 'USER';
 export type AdminBrand = {
   /** Only subscriptions on this brand's own panels (always on for a reseller's brand). */
   strictLookup?: boolean;
+  /** New purchases: HMPanel store order, or created directly on these inbounds. */
+  purchaseVia?: 'store' | 'direct';
+  purchaseInbounds?: string[];
+  /** NeoUptime status page for the app's network box. */
+  uptimeUrl?: string | null;
+  uptimeSlug?: string | null;
+  uptimeHasKey?: boolean;
+  /** Draft only: a new key to save ('' clears it). */
+  uptimeKey?: string;
   id: string;
   slug: string;
   appName: string;
@@ -60,6 +69,16 @@ export type AdminBrand = {
   pendingRenewals: number;
   devices: number;
   createdAt: string;
+};
+
+/** An HMPanel inbound the admin may create clients on. */
+export type HmInbound = {
+  id: string;
+  tag?: string | null;
+  remark?: string | null;
+  protocol?: string | null;
+  port?: number | null;
+  panel?: { id: string; name: string; panelType?: string | null } | null;
 };
 
 /** One web push send and how far it got. */
@@ -274,6 +293,8 @@ export const adminApi = {
     }),
   hmpanelOverview: (id: string, panelId: string) => request<HmOverview>(`/api/v1/admin/brands/${id}/hmpanel/${panelId}/overview`, { token: tk() }),
   hmpanelCards: (id: string, panelId: string) => request<HmCard[]>(`/api/v1/admin/brands/${id}/hmpanel/${panelId}/cards`, { token: tk() }),
+  hmpanelInbounds: (id: string, panelId: string) =>
+    request<HmInbound[]>(`/api/v1/admin/brands/${id}/hmpanel/${panelId}/inbounds`, { token: tk() }),
   hmpanelProducts: (id: string, panelId: string) =>
     request<HmProduct[]>(`/api/v1/admin/brands/${id}/hmpanel/${panelId}/products`, { token: tk() }),
   removeLogo: (id: string, variant: 'light' | 'dark' = 'light') =>

@@ -204,6 +204,9 @@ export class PanelGatewayService {
       approve: (id: string) => hm.approveOrder(cfg, id),
       reject: (id: string, reason: string) => hm.rejectOrder(cfg, id, reason),
       notify: (body: Parameters<HmPanelClientService['notify']>[1]) => hm.notify(cfg, body),
+      inbounds: () => hm.inbounds(cfg),
+      createClient: (body: Parameters<HmPanelClientService['createClient']>[1]) => hm.createClient(cfg, body),
+      lookup: (key: string) => hm.lookup(cfg, key),
       closeNotice: (body: Parameters<HmPanelClientService['closeNotice']>[1]) => hm.closeNotice(cfg, body),
     };
   }

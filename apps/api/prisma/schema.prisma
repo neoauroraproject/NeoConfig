@@ -123,6 +123,15 @@ model Brand {
   /// Only subscriptions found on this brand's own panels can be added (no reading the link itself).
   /// Always on for brands owned by a reseller.
   strictLookup    Boolean @default(false)
+  /// New purchases: "store" = an HMPanel store order; "direct" = NeoConfig creates the client on
+  /// the brand's HMPanel connection (its admin's quota) on the inbounds below.
+  purchaseVia      String  @default("store")
+  /// JSON array of HMPanel inbound ids a directly bought service is created on.
+  purchaseInbounds String?
+  /// NeoUptime status page shown in the app: base URL, page slug, API key (encrypted).
+  uptimeUrl        String?
+  uptimeSlug       String?
+  uptimeKeyEnc     String?
   /// HMPanel connection used for the store, cards and products
   renewalPanelId  String?
   /// Show customers the HMPanel store card (live) instead of the typed one

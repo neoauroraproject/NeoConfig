@@ -59,7 +59,9 @@ export function RenewSheet({
   const purchase = mode === 'purchase';
   const plans = (renewal?.plans ?? []).filter((p) =>
     purchase
-      ? Boolean(p.productId)
+      ? brand.purchaseVia === 'direct'
+        ? planKind(p) !== 'pasarguard'
+        : Boolean(p.productId)
       : (!serviceKind || !planKind(p) || planKind(p) === serviceKind) &&
         // Plans tied to a panel only show for subscriptions on that panel.
         (!p.panelId || !panelId || p.panelId === panelId) &&

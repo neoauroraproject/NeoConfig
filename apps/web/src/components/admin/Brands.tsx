@@ -206,6 +206,11 @@ function BrandEditor({
         hmCardId: draft.hmCardId ?? null,
         plansSync: draft.plansSync ?? false,
         purchaseEnabled: draft.purchaseEnabled ?? false,
+        purchaseVia: draft.purchaseVia ?? 'store',
+        purchaseInbounds: draft.purchaseInbounds ?? [],
+        uptimeUrl: draft.uptimeUrl ?? '',
+        uptimeSlug: draft.uptimeSlug ?? '',
+        ...(draft.uptimeKey !== undefined ? { uptimeKey: draft.uptimeKey } : {}),
         autoDecideMinutes: draft.autoDecideMinutes ?? 0,
         autoDecideAction: draft.autoDecideAction ?? 'approve',
         defaultLocale: draft.defaultLocale,
@@ -1153,6 +1158,40 @@ function NotifyTab({ brand, draft, set }: { brand: AdminBrand; draft: AdminBrand
   return (
     <div className="space-y-3">
       <RemindersCard draft={draft} set={set} />
+      <Card>
+        <h2 className="font-medium">وضعیت شبکه در اپ (NeoUptime)</h2>
+        <p className="mt-1 text-sm leading-7 text-[var(--ink-2)]">
+          یک باکس کوچک زیر سربرگ اپ نشان می‌دهد شبکه پایدار است یا اختلال دارد؛ با لمس، وضعیت هر سرور و اختلال‌ها باز می‌شود. کلید فقط روی سرور می‌ماند.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Field label="آدرس NeoUptime" htmlFor="up-url">
+            <input
+              id="up-url"
+              dir="ltr"
+              className="field"
+              placeholder="https://status.example.com"
+              value={draft.uptimeUrl ?? ''}
+              onChange={(e) => set('uptimeUrl', e.target.value)}
+            />
+          </Field>
+          <Field label="شناسهٔ صفحه (slug)" htmlFor="up-slug">
+            <input id="up-slug" dir="ltr" className="field" placeholder="my-network" value={draft.uptimeSlug ?? ''} onChange={(e) => set('uptimeSlug', e.target.value)} />
+          </Field>
+          <Field label="کلید API" htmlFor="up-key">
+            <input
+              id="up-key"
+              dir="ltr"
+              type="password"
+              autoComplete="off"
+              className="field"
+              placeholder={draft.uptimeHasKey ? 'ذخیره شده — برای تغییر بنویسید' : 'Bearer key'}
+              value={draft.uptimeKey ?? ''}
+              onChange={(e) => set('uptimeKey', e.target.value)}
+            />
+          </Field>
+        </div>
+        <p className="mt-2 text-xs text-[var(--ink-3)]">بعد از ذخیره، باکس در اپ ظاهر می‌شود. برای خاموش کردن، آدرس را پاک کنید.</p>
+      </Card>
       <Card>
         <h2 className="font-medium">ارسال اعلان به کاربران {brand.appName}</h2>
         <p className="mt-1 text-sm text-[var(--ink-2)]">

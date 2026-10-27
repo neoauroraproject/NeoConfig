@@ -3,7 +3,7 @@
 import { Bot, Check, CreditCard, ExternalLink, Package, PlugZap, RefreshCw, ShoppingBag, Store, TriangleAlert, Wallet } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import type { RenewalPlan } from '@/lib/api';
-import { AdminBrand, HmOverview, HmProduct, adminApi } from './adminApi';
+import { AdminBrand, HmInbound, HmOverview, HmProduct, adminApi } from './adminApi';
 import { ProductPicker, productService } from './HmPanelRenewal';
 import { Button, Card, StatusDot, Toggle, errMsg } from './ui';
 
@@ -396,11 +396,9 @@ export function HmPanelTab({
                 onChange={(v) => set('purchaseEnabled', v)}
               />
             </div>
-            <p className="mt-2 text-xs leading-6 text-[var(--ink-3)]">
-              سفارش با همان پلن‌های متصل به محصولات و همان کارت، در فروشگاه HMPanel ثبت می‌شود و ربات HMPanel آن را برای تأیید می‌فرستد. بعد از تأیید، HMPanel سرویس را می‌سازد و لینکش خودکار به اپ همان مشتری اضافه می‌شود.
-            </p>
-            {draft.purchaseEnabled && !hasStore && <Warn>برای خرید جدید، ماژول فروشگاه HMPanel لازم است.</Warn>}
-            {draft.purchaseEnabled && linked.length === 0 && <Warn>هنوز هیچ پلنی به محصولات فروشگاه وصل نیست.</Warn>}
+            {draft.purchaseEnabled && (
+              <DirectPurchase brandId={draft.id} panelId={panelId} draft={draft} set={set} hasStore={hasStore} linkedCount={linked.length} />
+            )}
           </Card>
 
           {/* readiness */}
@@ -471,5 +469,104 @@ function Warn({ children }: { children: React.ReactNode }) {
       <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       <span>{children}</span>
     </p>
+  );
+}
+
+/**
+ * How a new service is made: an order in the HMPanel store, or (no store needed)
+ * NeoConfig creates the client itself on the picked inbounds with this
+ * connection's key, so HMPanel charges that admin's own quota.
+ */
+function DirectPurchase({
+  brandId,
+  panelId,
+  draft,
+  set,
+  hasStore,
+  linkedCount,
+}: {
+  brandId: string;
+  panelId: string;
+  draft: AdminBrand;
+  set: SetFn;
+  hasStore: boolean;
+  linkedCount: number;
+}) {
+  const [inbounds, setInbounds] = useState<HmInbound[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const via = draft.purchaseVia ?? 'store';
+  const picked = draft.purchaseInbounds ?? [];
+
+  useEffect(() => {
+    if (via !== 'direct' || !panelId) return;
+    setError(null);
+    adminApi
+      .hmpanelInbounds(brandId, panelId)
+      .then(setInbounds)
+      .catch((err) => setError(errMsg(err)));
+  }, [via, brandId, panelId]);
+
+  const plans = draft.plans.filter((p) => p.price.trim() && p.service !== 'pasarguard');
+  return (
+    <div className="mt-4 space-y-3">
+      <div className="grid gap-2 sm:grid-cols-2">
+        {(
+          [
+            ['direct', 'ساخت مستقیم روی HMPanel', 'بدون فروشگاه: بعد از تأیید رسید، کاربر روی اینباندهای انتخابی ساخته می‌شود و حجمش از سهمیهٔ همین ادمین کم می‌شود.'],
+            ['store', 'سفارش در فروشگاه HMPanel', 'محصولات فروشگاه؛ HMPanel سرویس را می‌سازد. ماژول فروشگاه لازم است.'],
+          ] as const
+        ).map(([v, title, hint]) => (
+          <label
+            key={v}
+            className={`cursor-pointer rounded-2xl border p-3 ${via === v ? 'border-[var(--ink)] bg-[var(--surface-2)]' : 'border-[var(--line)]'}`}
+          >
+            <span className="flex items-center gap-2 text-sm font-medium">
+              <input type="radio" name="purchase-via" checked={via === v} onChange={() => set('purchaseVia', v)} />
+              {title}
+            </span>
+            <span className="mt-1 block text-xs leading-6 text-[var(--ink-3)]">{hint}</span>
+          </label>
+        ))}
+      </div>
+
+      {via === 'store' && (
+        <>
+          {!hasStore && <Warn>برای این حالت، ماژول فروشگاه HMPanel لازم است.</Warn>}
+          {linkedCount === 0 && <Warn>هنوز هیچ پلنی به محصولات فروشگاه وصل نیست.</Warn>}
+        </>
+      )}
+
+      {via === 'direct' && (
+        <>
+          <p className="text-[13px] font-medium">اینباندهایی که سرویس جدید روی آن‌ها ساخته می‌شود</p>
+          {error && <Warn>{error} — کلید این اتصال باید دسترسی clients.write داشته باشد.</Warn>}
+          {!inbounds && !error && <p className="text-xs text-[var(--ink-3)]">در حال خواندن اینباندها…</p>}
+          {inbounds && (
+            <div className="max-h-72 space-y-1 overflow-y-auto rounded-xl border border-[var(--line)] p-2">
+              {inbounds.map((ib) => (
+                <label key={ib.id} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-[var(--surface-2)]">
+                  <input
+                    type="checkbox"
+                    checked={picked.includes(ib.id)}
+                    onChange={(e) => set('purchaseInbounds', e.target.checked ? [...picked, ib.id] : picked.filter((x) => x !== ib.id))}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-sm" dir="ltr">
+                    {ib.remark || ib.tag || ib.id}
+                  </span>
+                  <span className="text-xs text-[var(--ink-3)]" dir="ltr">
+                    {[ib.protocol, ib.port, ib.panel?.name].filter(Boolean).join(' · ')}
+                  </span>
+                </label>
+              ))}
+              {inbounds.length === 0 && <p className="p-2 text-sm text-[var(--ink-3)]">این ادمین به هیچ اینباندی دسترسی ندارد.</p>}
+            </div>
+          )}
+          {!picked.length && <Warn>حداقل یک اینباند انتخاب کنید؛ تا آن موقع دکمهٔ خرید در اپ نمایش داده نمی‌شود.</Warn>}
+          <p className="text-xs leading-6 text-[var(--ink-3)]">
+            پلن‌های قابل خرید: همهٔ پلن‌های قیمت‌دار تب «تمدید» به‌جز پلن‌های پاسارگارد ({plans.length.toLocaleString('fa-IR')} پلن). قیمت، روز، حجم و تعداد کاربر همان‌جا تنظیم می‌شود. بعد از ساخت، لینک اشتراک و لینک مخصوص اپ برای خریدار می‌آید و اعلان «سرویس جدید شما آماده است» فرستاده می‌شود.
+          </p>
+        </>
+      )}
+    </div>
   );
 }

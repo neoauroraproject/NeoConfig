@@ -23,6 +23,7 @@ import { SavedAccount, dailyUsage } from '@/lib/accounts';
 import { bytesParts, daysUntil, formatBytes, relativeTime, usageFraction } from '@/lib/format';
 import { BrandMark } from './BrandMark';
 import { useSf } from './context';
+import { NetworkStatusBox } from './NetworkStatus';
 
 type Props = {
   account: SavedAccount;
@@ -85,6 +86,7 @@ export function Dashboard(p: Props) {
           </button>
         </div>
       </header>
+      <NetworkStatusBox />
 
       {/* desktop: hero + actions on the left, figures on the right */}
       <div className="wide:mt-8 wide:grid wide:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] wide:items-start wide:gap-6">

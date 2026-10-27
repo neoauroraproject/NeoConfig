@@ -1194,6 +1194,28 @@ function NetworkTab({ draft, set }: { draft: AdminBrand; set: SetFn }) {
           <p className="mt-1 text-sm leading-7 text-[var(--ink-2)]">
             یک باکس کوچک زیر سربرگ اپ نشان می‌دهد شبکه پایدار است یا اختلال دارد؛ با لمس، وضعیت هر سرور و اختلال‌ها باز می‌شود. کلید فقط روی سرور می‌ماند.
           </p>
+          <div className="mt-4">
+            <Field label="کد embed صفحهٔ وضعیت را اینجا بچسبانید (آدرس، slug و کلید خودکار پر می‌شوند)" htmlFor="up-embed">
+              <textarea
+                id="up-embed"
+                dir="ltr"
+                rows={3}
+                className="field resize-none font-mono text-xs"
+                placeholder={'<script src=".../embed.js" data-server="https://..." data-slug="..." data-key="sk_..."></script>'}
+                onChange={(e) => {
+                  // The snippet carries exactly what NeoConfig needs; the key is saved on the server, never sent to the app.
+                  const v = e.target.value;
+                  const attr = (n: string) => new RegExp(`data-${n}\\s*=\\s*["']([^"']+)["']`, 'i').exec(v)?.[1]?.trim();
+                  const server = attr('server');
+                  const slug = attr('slug');
+                  const key = attr('key');
+                  if (server) set('uptimeUrl', server.replace(/\/+$/, ''));
+                  if (slug) set('uptimeSlug', slug);
+                  if (key) set('uptimeKey', key);
+                }}
+              />
+            </Field>
+          </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <Field label="آدرس NeoUptime" htmlFor="up-url">
               <input

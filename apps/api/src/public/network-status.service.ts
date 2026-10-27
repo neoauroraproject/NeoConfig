@@ -47,9 +47,9 @@ export function cleanNetworkStatus(raw: unknown): NetworkStatus {
       const o = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>;
       return {
         title: text(o.title ?? o.name, 120) || '—',
-        message: text(o.message ?? o.description ?? o.body, 600) || null,
-        status: text(o.status ?? o.state, 32) || null,
-        at: when(o.startedAt ?? o.createdAt ?? o.startsAt ?? o.updatedAt),
+        message: text(o.content ?? o.message ?? o.description ?? o.body, 600) || null,
+        status: text(o.status ?? o.style ?? o.state, 32) || null,
+        at: when(o.start ?? o.startedAt ?? o.createdAt ?? o.startsAt ?? o.updatedAt),
       };
     });
   return {

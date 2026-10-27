@@ -63,9 +63,11 @@ export function networkTone(s: NetworkStatus): { tone: Tone; down: number } {
   const monitors = s.groups.flatMap((g) => g.monitors);
   const down = monitors.filter((m) => m.status === 'down').length;
   const o = s.overall.toLowerCase();
-  if (s.maintenance.length && !down && !s.incidents.length) return { tone: 'maint', down };
-  if (/outage|major|down/.test(o) || (monitors.length && down === monitors.length)) return { tone: 'down', down };
-  if (down || s.incidents.length || /degrad|partial|issue/.test(o)) return { tone: 'issue', down };
+  // NeoUptime: operational | partial_outage | major_outage | maintenance | unknown. Pinned "info" notices aren't trouble.
+  const trouble = s.incidents.filter((i) => (i.status || '').toLowerCase() !== 'info').length;
+  if (s.maintenance.length && !down && !trouble) return { tone: 'maint', down };
+  if (/major/.test(o) || (monitors.length > 0 && down === monitors.length)) return { tone: 'down', down };
+  if (down || trouble || /partial|degrad|issue/.test(o)) return { tone: 'issue', down };
   if (/maint/.test(o)) return { tone: 'maint', down };
   if (/operational|ok|up/.test(o) || monitors.length) return { tone: 'ok', down };
   return { tone: 'unknown', down };
